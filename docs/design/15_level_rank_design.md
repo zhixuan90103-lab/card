@@ -53,9 +53,13 @@
 | **R13 钥匙** | 至少 1 把同点钥匙在可规划路径；简单关 **≥2** 把 | 硬 |
 | **R14 软难度** | 不解锁也可通关（更难）；解锁则变顺 | 硬 |
 | **R15 禁平行剥** | 任意两组**组顶相同**时，其**次顶**不得相同（跨层）。杜绝「两堆 5 同时消完下面都是 Q，再消又是同点」的廉价平行展开 | 硬（Level01） |
-| **R16 红黑配对** | 仅 **同 rank 且同色** 可消；红=♥、黑=♠（无方片/梅花）；开局对/L2/锁钥同色；全局 (rank,color) 偶数 | 硬（D22） |
+| **R16 红黑配对** | 仅 **同 rank 且同色** 可消；红=♥、黑=♠；开局对/L2/锁钥同色；全局 (rank,color) 偶数 | 硬（D22） |
+| **R17 锁钥匙稀缺** | 每个锁 match-key 全场张数 **∈[2,4]**（含锁） | 硬（D24 / H1） |
+| **R18 库钥匙靠前** | stock 中锁相关同色同点尽量靠前；忌钉队尾 | 硬（D25） |
+| **R19 残局 trim** | 桌上已不需要的 match-key，从 stock/waste **成对回收** | 硬（D26） |
 
-实现：`level01Deal.ts` 填点 + `suitPaint.paintSuitsOnLevel` + `canMatchCards`。
+实现：`level01Deal` · `pathLockMetrics` · `suitPaint` · `rules.trimSurplusDeck` · `canMatchCards`。  
+总整理：`docs/changelog/2026-07-22_full_roundup.md`。
 
 ---
 

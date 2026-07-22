@@ -1,12 +1,13 @@
 import { GameSession, pickCard } from './core';
 import { isHardDead, isSoftStuck } from './core/stuck';
 import type { Level } from './core/types';
+import { STOCK_STACK_MAX_VISIBLE } from './data/layout';
 import {
-  STOCK_RECT,
-  STOCK_STACK_DX,
-  STOCK_STACK_MAX_VISIBLE,
-  WASTE_RECT,
-} from './data/layout';
+  getStockRect,
+  getStockStackDx,
+  getWasteRect,
+  onDrawZoneChange,
+} from './data/pileLayoutRuntime';
 import {
   CONTENT_MODE,
   difficultyForRun,
@@ -16,21 +17,26 @@ import {
   type RunDeal,
 } from './data/levels';
 import { createPixiApp } from './render/app';
+import { loadCardFaceAssets } from './render/cardAssets';
 import { CardRenderer } from './render/cards';
+import { PileTray } from './render/pileTray';
 import { Hud } from './ui/hud';
+import { mountTrayTuner } from './ui/trayTuner';
 import { screenToDesign } from './viewport/design';
 import { getPhoneFrameEl } from './viewport/phoneFrame';
 
 /** Keep stock/waste card rects aligned for logical pickCard (D17). */
 function syncPileRects(session: GameSession): void {
+  const stock = getStockRect();
+  const waste = getWasteRect();
   const st = session.getState();
   for (const id of st.stock) {
     const c = st.cards[id];
-    if (c) c.rect = { ...STOCK_RECT };
+    if (c) c.rect = { ...stock };
   }
   for (const id of st.waste) {
     const c = st.cards[id];
-    if (c) c.rect = { ...WASTE_RECT };
+    if (c) c.rect = { ...waste };
   }
 }
 
@@ -48,6 +54,10 @@ async function main(): Promise<void> {
   syncPileRects(session);
 
   const { app, world, destroy } = await createPixiApp();
+  await loadCardFaceAssets();
+  // Tray under draw piles, then cards on top
+  const pileTray = new PileTray();
+  world.addChild(pileTray.root);
   const cards = new CardRenderer();
   world.addChild(cards.root);
   cards.bootstrap(session.getState());
@@ -97,6 +107,7 @@ async function main(): Promise<void> {
     cards.sync(session.getState());
     const st = session.getState();
     const hard = isHardDead(st);
+    hud.layoutPiles();
     hud.sync(st, {
       canUndo: session.canUndo(),
       levelName: formatRunTitle(run.meta, runIndex),
@@ -140,6 +151,16 @@ async function main(): Promise<void> {
     },
   });
 
+  // Live tuner: 抽牌区 + 牌阴影
+  mountTrayTuner({
+    onShadowChange: () => cards.sync(session.getState()),
+  });
+  onDrawZoneChange(() => {
+    syncPileRects(session);
+    cards.sync(session.getState());
+    hud.layoutPiles();
+  });
+
   refresh();
 
   const frame = getPhoneFrameEl();
@@ -152,18 +173,19 @@ async function main(): Promise<void> {
     const rect = frame.getBoundingClientRect();
     const p = screenToDesign(clientX, clientY, rect);
 
+    const stockR = getStockRect();
     const stockVis = Math.min(
       session.getState().stock.length,
       STOCK_STACK_MAX_VISIBLE,
     );
     const stockExtra = Math.max(0, stockVis - 1);
-    const stockLeft = STOCK_RECT.x + stockExtra * STOCK_STACK_DX;
-    const stockRight = STOCK_RECT.x + STOCK_RECT.w;
+    const stockLeft = stockR.x + stockExtra * getStockStackDx();
+    const stockRight = stockR.x + stockR.w;
     if (
       p.x >= stockLeft &&
       p.x <= stockRight &&
-      p.y >= STOCK_RECT.y &&
-      p.y <= STOCK_RECT.y + STOCK_RECT.h
+      p.y >= stockR.y &&
+      p.y <= stockR.y + stockR.h
     ) {
       const stockBefore =
         session.getState().stock.length + session.getState().waste.length;

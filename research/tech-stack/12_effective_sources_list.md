@@ -204,11 +204,11 @@ A-OG, A-SOL, A-M3, A-MJ
 
 ---
 
-## 与市场调研 notebook 分工
+## 与市场调研 / Art-UX notebook 分工
 
 | Notebook | ID | 内容 |
 |----------|-----|------|
-| 配对牌项目笔记 | `8accbc6d-2100-42dd-b94f-54be4a93740b` | **本表** + 产品/技术决策 |
+| 配对牌项目笔记 | `8accbc6d-2100-42dd-b94f-54be4a93740b` | **本表** + 产品/技术决策 + **Art/UX 有效源**（见 `research/art-ux/12_effective_sources_list.md`，标题前缀 `ArtUX ·`） |
 | 排序归位整理调研 | `c4153ca3-4bce-43da-9c56-0ae6d3f367c2` | 品类调研；见 `sorting-market/12_effective_sources_list.md` |
 
 ---

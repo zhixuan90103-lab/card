@@ -1,12 +1,16 @@
 # 优质手感 · 反查补漏 + 检索计划 v1
 
 **日期：** 2026-07-21  
-**状态：** 计划已修订 · 待按 P 级执行  
+**状态：** 计划已修订 · **手感支柱已并入 `docs/design/17_art_ux_research_plan.md`** · 本文件保留为祖先与细节  
 **范围：** 通用「优质手感」研究收口 → **本产品（配对牌 · 2D 层叠点击 · Pixi · iPhone 15 Safari）可执行手感规格**  
 **关联：**
 
 | 文档 | 关系 |
 |------|------|
+| **`docs/design/17_art_ux_research_plan.md`** | **现行总计划**（美术+UI/UE+动画+手感） |
+| **`research/art-ux/03_ue_event_table.md`** | **产品 UE 细表唯一源**（覆盖本节 §3.4 草案） |
+| **`research/art-ux/08_impl_pins_r31.md`** | 实现钉（时序/假设） |
+| `research/art-ux/00_INDEX.md` | 检索成果目录 |
 | 对话三轮 Game Feel / Juice 检索 | 理论与通用清单来源 |
 | `sorting-market/05_handfeel_chapter.md` | 整理类输入/吸附/撤销；可复用原则，**品类操作不同** |
 | `docs/design/03_experience_and_innovation.md` | 体验合同：顿悟、手动确认、无 timer |

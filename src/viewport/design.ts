@@ -2,8 +2,11 @@
 export const DESIGN_WIDTH = 393;
 export const DESIGN_HEIGHT = 852;
 
-/** Cap devicePixelRatio to avoid 4K overdraw */
-export const MAX_DPR = 2;
+/**
+ * Cap devicePixelRatio.
+ * 3 ≈ iPhone retina；过高(4K 桌面)才截断。锯齿敏感：牌圆角/描边需足够缓冲像素。
+ */
+export const MAX_DPR = 3;
 
 export type Vec2 = { x: number; y: number };
 

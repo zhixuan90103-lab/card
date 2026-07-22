@@ -4,7 +4,8 @@ export default defineConfig({
   root: '.',
   publicDir: 'public',
   server: {
-    port: 5173,
+    port: 5280,
+    strictPort: true,
     open: false,
   },
   build: {

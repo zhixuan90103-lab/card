@@ -1,16 +1,16 @@
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from '../viewport/design';
 
 /**
- * 牌面尺寸 · 已定稿（2026-07-21）
- * CARD_W×H = 52×72；横组数可调
- * 现行 5 组：5 * 52 + 4 * 8 = 292 → 两侧约 50.5
+ * 牌面尺寸 · 2026-07-22 对齐 Poker 资源比例
+ * 资源 188×248 ≈ 47:62；槽位 56×74（同比例，避免拉伸发糊）
+ * 5 组：5*56 + 4*8 = 312 → 两侧约 40.5
  * 见 docs/design/05_board_layout_consensus.md §2
  *
  * 竖向分区（上→下）：
  *   顶栏文案 → 谜题区 → 抽牌区（stock/waste）→ 底栏按钮
  */
-export const CARD_W = 52;
-export const CARD_H = 72;
+export const CARD_W = 56;
+export const CARD_H = 74;
 
 /** Puzzle grid: 横 5 组 × 竖 4 组 */
 export const GRID_COLS = 5;

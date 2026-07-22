@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Card · layout47 × style40</title>
+<style>
+  :root {
+    --bg: #F3EDE4;
+    --bg-soft: #EFE6DA;
+    --back: #8FA9B8;
+    --back-edge: #C5D4DC;
+    --back-inset: #A8BEC9;
+    --face: #FFF8F0;
+    --face-edge: #E8D5C4;
+    --red: #E25A4A;
+    --black: #2A3036;
+    --text-muted: #9A9086;
+    --panel: #E8DDD0;
+    --shadow-card: 0 3px 8px rgba(60, 45, 30, 0.12);
+    --shadow-btn: 0 3px 0 rgba(60, 45, 30, 0.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 393px;
+    height: 852px;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .phone {
+    width: 393px;
+    height: 852px;
+    position: relative;
+    background:
+      radial-gradient(ellipse 120% 60% at 50% 0%, #F7F1E8 0%, transparent 55%),
+      var(--bg);
+  }
+
+  /* —— top —— */
+  .top {
+    position: absolute;
+    top: 18px;
+    left: 16px;
+    right: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    pointer-events: none;
+  }
+  .top .line1 {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .top .line2 {
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.9;
+    line-height: 1.35;
+  }
+
+  /* —— board ——
+     Design coords from layout.ts scaled to 393:
+     GRID_ORIGIN ~ (50.5, 155), CARD 52×72, STEP 60×100, stack d=9
+  */
+  .board {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 393px;
+    height: 852px;
+  }
+
+  .card {
+    position: absolute;
+    width: 52px;
+    height: 72px;
+    border-radius: 8px;
+    box-sizing: border-box;
+  }
+
+  /* Style 40 back */
+  .card.back {
+    background: linear-gradient(180deg, #97B0BD 0%, #89A3B3 100%);
+    border: 1.5px solid var(--back-edge);
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,0.18), 0 1px 2px rgba(40,50,60,0.08);
+  }
+  .card.back::after {
+    content: "";
+    position: absolute;
+    inset: 5px;
+    border-radius: 5px;
+    border: 1.2px solid rgba(255,255,255,0.28);
+    pointer-events: none;
+  }
+
+  /* Style 40 face — giant center rank */
+  .card.face {
+    background: var(--face);
+    border: 1.5px solid var(--face-edge);
+    box-shadow: var(--shadow-card);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card.face .rank {
+    font-weight: 800;
+    font-size: 34px;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    transform: translateY(1px);
+  }
+  /* Style 40: corner suit pips only (no tiny inverted ranks) */
+  .card.face .pip-tl,
+  .card.face .pip-br {
+    position: absolute;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .card.face .pip-tl { top: 6px; left: 7px; }
+  .card.face .pip-br {
+    bottom: 6px; right: 7px;
+    transform: rotate(180deg);
+  }
+  .card.face.red .rank,
+  .card.face.red .pip-tl,
+  .card.face.red .pip-br { color: var(--red); }
+  .card.face.black .rank,
+  .card.face.black .pip-tl,
+  .card.face.black .pip-br { color: var(--black); }
+
+  /* slightly larger free cards for readability like 40 */
+  .card.face.free {
+    width: 56px;
+    height: 78px;
+    border-radius: 9px;
+    z-index: 50;
+    box-shadow: 0 4px 10px rgba(60, 45, 30, 0.14);
+  }
+  .card.face.free .rank { font-size: 40px; }
+  .card.face.free .pip-tl { top: 6px; left: 7px; font-size: 13px; }
+  .card.face.free .pip-br { bottom: 6px; right: 7px; font-size: 13px; }
+
+  /* —— stock / waste —— */
+  .piles {
+    position: absolute;
+    left: 50%;
+    top: 668px;
+    transform: translateX(-50%);
+    width: 200px;
+    height: 100px;
+  }
+  .piles .panel {
+    position: absolute;
+    inset: -10px -18px -6px -18px;
+    background: var(--panel);
+    border-radius: 16px;
+    opacity: 0.55;
+  }
+  .pile-label {
+    position: absolute;
+    top: -18px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+    width: 80px;
+    text-align: center;
+  }
+  .pile-label.stock { left: 6px; }
+  .pile-label.waste { left: 110px; }
+  .remain {
+    position: absolute;
+    bottom: -16px;
+    left: 110px;
+    width: 80px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .stock-stack, .waste-slot {
+    position: absolute;
+    top: 8px;
+  }
+  .stock-stack { left: 18px; width: 52px; height: 72px; }
+  .waste-slot { left: 122px; }
+
+  /* —— bottom bar —— */
+  .bar {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 78px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 14px 14px;
+  }
+  .btn {
+    border: none;
+    border-radius: 999px;
+    padding: 11px 18px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    box-shadow: var(--shadow-btn);
+    letter-spacing: 0.04em;
+  }
+  .btn.draw { background: #D98A74; }
+  .btn.undo { background: #A89A8E; }
+  .btn.restart { background: #9A938C; }
+  .btn.newrun { background: #6E9A7A; }
+</style>
+</head>
+<body>
+<div class="phone" id="phone">
+  <div class="top">
+    <div class="line1">第 3 局 · 极难 · 锁×3 · #3166059773</div>
+    <div class="line2">极难局：满锁+薄库，钥匙很少。同点同花色（♥/♠）才能消</div>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <div class="piles">
+    <div class="panel"></div>
+    <div class="pile-label stock">抽牌区</div>
+    <div class="pile-label waste">抽出叠</div>
+    <div class="stock-stack" id="stock"></div>
+    <div class="waste-slot" id="waste"></div>
+    <div class="remain">剩余 7</div>
+  </div>
+
+  <div class="bar">
+    <button class="btn draw" type="button">抽牌</button>
+    <button class="btn undo" type="button">撤销</button>
+    <button class="btn restart" type="button">重开</button>
+    <button class="btn newrun" type="button">新局</button>
+  </div>
+</div>
+
+<script>
+/**
+ * Layout mirrors docs/design/05 + layout.ts (393×852):
+ * CARD 52×72, GRID 5×4, GAP 8/28, ORIGIN ~50.5×155, stack d=9
+ * L0: 5×4 groups × 3 cards (backs except free tops)
+ * L1: 4×3 seam groups on cross points × 3
+ * L2: 3×2 on L1 seams × 2
+ * Free faces (from real screenshot): A♥ 3♠ 2♠ / 10♥ K♠ 10♥
+ */
+const CARD_W = 52, CARD_H = 72;
+const STEP_X = 60, STEP_Y = 100;
+const OX = 50.5, OY = 155;
+const D = 9;
+
+const board = document.getElementById('board');
+
+function cell(c, r) {
+  return { x: OX + c * STEP_X, y: OY + r * STEP_Y };
+}
+function cross(c, r) {
+  // midpoint of (c,r) and (c+1,r+1)
+  const a = cell(c, r), b = cell(c + 1, r + 1);
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function mkBack(x, y, z) {
+  const el = document.createElement('div');
+  el.className = 'card back';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.style.zIndex = String(z);
+  board.appendChild(el);
+  return el;
+}
+
+function mkFace(x, y, z, rank, suit, free) {
+  const red = suit === '♥';
+  const el = document.createElement('div');
+  el.className = 'card face ' + (red ? 'red' : 'black') + (free ? ' free' : '');
+  // free cards slightly larger — center on same anchor
+  const w = free ? 56 : 52;
+  const h = free ? 78 : 72;
+  el.style.left = (x - (w - 52) / 2) + 'px';
+  el.style.top = (y - (h - 72) / 2) + 'px';
+  el.style.zIndex = String(z);
+  el.innerHTML =
+    '<div class="pip-tl">' + suit + '</div>' +
+    '<div class="rank">' + rank + '</div>' +
+    '<div class="pip-br">' + suit + '</div>';
+  board.appendChild(el);
+  return el;
+}
+
+function stackBacks(anchor, n, baseZ) {
+  // top card at anchor.y; lower cards higher on screen (up offset)
+  for (let i = 0; i < n; i++) {
+    const depthFromTop = n - 1 - i; // 0 = top
+    const y = anchor.y - depthFromTop * D;
+    mkBack(anchor.x, y, baseZ + i);
+  }
+}
+
+// —— L0: 5×4 × 3 backs (will overwrite free tops as faces) ——
+const L0 = [];
+for (let r = 0; r < 4; r++) {
+  for (let c = 0; c < 5; c++) {
+    const a = cell(c, r);
+    stackBacks(a, 3, 10 + r * 20 + c);
+    L0.push({ c, r, a });
+  }
+}
+
+// —— L1: 4×3 cross seams × 3 ——
+const L1 = [];
+for (let r = 0; r < 3; r++) {
+  for (let c = 0; c < 4; c++) {
+    const a = cross(c, r);
+    stackBacks(a, 3, 200 + r * 20 + c);
+    L1.push({ c, r, a });
+  }
+}
+
+// —— L2: 3×2 on L1 crosses × 2 ——
+for (let r = 0; r < 2; r++) {
+  for (let c = 0; c < 3; c++) {
+    // midpoint of L1 (c,r) and L1 (c+1,r+1)
+    const a1 = cross(c, r);
+    const a2 = cross(c + 1, r + 1);
+    const a = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 };
+    stackBacks(a, 2, 400 + r * 20 + c);
+  }
+}
+
+// Free tops matching screenshot (L2 + some L1 tops area):
+// Visual center free cluster: A♥ 3♠ 2♠ / 10♥ K♠ 10♥
+// Place on L2-ish / upper free slots for readable cluster like real game mid-progress
+const frees = [
+  // upper free row (approx L2 top row +)
+  { x: cross(0, 0).x + 10, y: cross(0, 0).y + 28, rank: 'A', suit: '♥' },
+  { x: cross(1, 0).x + 10, y: cross(1, 0).y + 28, rank: '3', suit: '♠' },
+  { x: cross(2, 0).x + 10, y: cross(2, 0).y + 28, rank: '2', suit: '♠' },
+  // lower free row
+  { x: cross(0, 1).x + 10, y: cross(0, 1).y + 28, rank: '10', suit: '♥' },
+  { x: cross(1, 1).x + 10, y: cross(1, 1).y + 28, rank: 'K', suit: '♠' },
+  { x: cross(2, 1).x + 10, y: cross(2, 1).y + 28, rank: '10', suit: '♥' },
+];
+// Better: place frees exactly on L2 group tops
+const freeOnL2 = [];
+for (let r = 0; r < 2; r++) {
+  for (let c = 0; c < 3; c++) {
+    const a1 = cross(c, r);
+    const a2 = cross(c + 1, r + 1);
+    freeOnL2.push({ x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 });
+  }
+}
+const freeDefs = [
+  { rank: 'A', suit: '♥' },
+  { rank: '3', suit: '♠' },
+  { rank: '2', suit: '♠' },
+  { rank: '10', suit: '♥' },
+  { rank: 'K', suit: '♠' },
+  { rank: '10', suit: '♥' },
+];
+// Clear L2 tops: we already stacked backs; paint free faces on top of L2 anchors
+freeOnL2.forEach((a, i) => {
+  const d = freeDefs[i];
+  mkFace(a.x, a.y, 500 + i, d.rank, d.suit, true);
+});
+
+// Stock: left-offset stack of backs (style 40 teal-blue)
+const stock = document.getElementById('stock');
+for (let i = 8; i >= 0; i--) {
+  const el = document.createElement('div');
+  el.className = 'card back';
+  el.style.left = (-i * 5) + 'px';
+  el.style.top = '0px';
+  el.style.zIndex = String(10 + (8 - i));
+  // slightly more teal like 40 DRAW
+  el.style.background = 'linear-gradient(180deg, #8EAEB8 0%, #7F9FA9 100%)';
+  stock.appendChild(el);
+}
+
+// Waste: 4♠
+const waste = document.getElementById('waste');
+(function () {
+  const el = document.createElement('div');
+  el.className = 'card face black free';
+  el.style.position = 'relative';
+  el.style.left = '0';
+  el.style.top = '0';
+  el.innerHTML =
+    '<div class="pip-tl">♠</div>' +
+    '<div class="rank">4</div>' +
+    '<div class="pip-br">♠</div>';
+  waste.appendChild(el);
+})();
+</script>
+</body>
+</html>

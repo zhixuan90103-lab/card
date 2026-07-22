@@ -2,8 +2,9 @@
 
 **执行：** 2026-07-22  
 **计划：** `docs/design/16_path_lock_research_plan.md`  
-**状态：** 检索完成 · **R5-H1 已实现**（`pathLockMetrics` + deal 约束）· H2 可选  
-**计划：** `docs/design/16_path_lock_research_plan.md`（v1.1）
+**状态：** 检索完成 · **R5-H1 已实现**（稀缺 + 库钥匙靠前 + 残局 trim）· H2 可选  
+**计划：** `docs/design/16_path_lock_research_plan.md`  
+**产品总表：** `docs/changelog/2026-07-22_full_roundup.md`
 
 | 文档 | 内容 |
 |------|------|
