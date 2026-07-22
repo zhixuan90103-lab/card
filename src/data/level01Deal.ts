@@ -6,10 +6,17 @@
  * 禁止：槽在但为空
  */
 import { mulberry32, shuffleInPlace } from '../core/rng';
-import type { Level, Rank } from '../core/types';
+import type { Level, Rank, Suit } from '../core/types';
+import { matchKey } from '../core/types';
 import { ALL_RANKS, fixParityInStock } from './rankDesign';
-import { canFullyClear } from './levelSolve';
 import { generateLayout, materializeCards, type GeoGroup } from './levelLayout';
+import { paintSuitsOnLevel } from './suitPaint';
+import {
+  enforceLockKeyScarcity,
+  passClearGreedy,
+  passKeyOnBoard,
+  passKeyScarcity,
+} from './pathLockMetrics';
 
 /**
  * 抽牌区不再「灌到固定张数」。
@@ -19,9 +26,13 @@ import { generateLayout, materializeCards, type GeoGroup } from './levelLayout';
 export const LEVEL01_DEAL_STOCK_TARGET = 12;
 export const LEVEL01_MAX_LOCKS = 3;
 
+/** 常规局已抬高难度；每 3 局一轮「极难」 */
+export type DealDifficulty = 'hard' | 'extreme';
+
 export type Level01DealMeta = {
   seed: number;
   layoutId: string;
+  difficulty: DealDifficulty;
   lockCount: number;
   topology: 'independent' | 'chain';
   lockIds: string[];
@@ -35,16 +46,34 @@ export type Level01DealMeta = {
   l2Count: number;
 };
 
-function pickLockCount(rand: () => number): number {
+/** 第 3、6、9… 局为极难，其余为抬高后的 hard */
+export function difficultyForRun(runIndex: number): DealDifficulty {
+  if (runIndex > 0 && runIndex % 3 === 0) return 'extreme';
+  return 'hard';
+}
+
+/** hard：几乎总有锁；extreme：满锁 */
+function pickLockCount(rand: () => number, diff: DealDifficulty): number {
+  if (diff === 'extreme') return 3;
   const x = rand();
-  if (x < 0.12) return 0;
-  if (x < 0.48) return 1;
-  if (x < 0.82) return 2;
+  // 无 0 锁；约 20% 一锁、45% 两锁、35% 三锁
+  if (x < 0.2) return 1;
+  if (x < 0.65) return 2;
   return 3;
+}
+
+function chainChance(diff: DealDifficulty): number {
+  return diff === 'extreme' ? 0.92 : 0.72;
+}
+
+/** L1 抽牌伙伴对：hard 至多 1 组，extreme 不给（库更瘦） */
+function accessPairCap(diff: DealDifficulty): number {
+  return diff === 'extreme' ? 0 : 1;
 }
 
 function dealOnce(
   seed: number,
+  difficulty: DealDifficulty = 'hard',
 ): { level: Level; meta: Level01DealMeta } | null {
   const rand = mulberry32(seed);
   // 几何固定（忽略 seed）
@@ -59,9 +88,14 @@ function dealOnce(
   const pairG1 = freeKeys[1]!;
 
   const l1Groups = groups.filter((g) => g.tier === 1);
-  const lockCount = Math.min(pickLockCount(rand), l1Groups.length);
+  const lockCount = Math.min(
+    pickLockCount(rand, difficulty),
+    l1Groups.length,
+  );
   const topology: 'independent' | 'chain' =
-    lockCount >= 2 && rand() < 0.5 ? 'chain' : 'independent';
+    lockCount >= 2 && rand() < chainChance(difficulty)
+      ? 'chain'
+      : 'independent';
 
   const l1Shuf = [...l1Groups];
   shuffleInPlace(l1Shuf, rand);
@@ -230,7 +264,7 @@ function dealOnce(
   const rankMap = new Map<string, Rank[]>();
   for (const [k, v] of ranks) rankMap.set(k, v as Rank[]);
 
-  let cards;
+  let cards: import('../core/types').LevelCardDef[];
   try {
     cards = materializeCards(groups, rankMap);
   } catch {
@@ -240,17 +274,68 @@ function dealOnce(
   const expected = 20 * 3 + 12 * 3 + 6 * 2;
   if (cards.length !== expected) return null;
 
-  // stock = 工具区：L1 伙伴（封顶）+ 奇点补齐；禁止 pad 到固定张数
+  // stock = 工具区：L1 伙伴（按难度封顶）+ 奇点补齐；禁止 pad
+  // 顺序在上色+锁 key 确定后再排（钥匙靠前）
   const openTopRanks = new Set<Rank>([P, A, Bb, C, D]);
-  let stock = buildLeanStock(cards, l1NeedStock, rand);
+  let stock = buildLeanStock(
+    cards,
+    l1NeedStock,
+    rand,
+    accessPairCap(difficulty),
+  );
   stock = fixParityInStock(stock, cards);
-  stock = orderStock(stock, openTopRanks, rand);
 
+  // D22：上色（红黑同点可消）；L2 链 / 开局对 / 锁钥强制同色
+  const forcedColor: Array<[string, string]> = [];
+  const l2Top = (k: string) => `${k}_1`;
+  const l2Bot = (k: string) => `${k}_0`;
+  // T = [pair0, pair1, rest…] 与 tops/bots 拓扑一致
+  if (T.length >= 6) {
+    forcedColor.push([l2Top(T[0]!), l2Top(T[1]!)]); // 开局 P
+    forcedColor.push([l2Bot(T[0]!), l2Top(T[2]!)]); // A
+    forcedColor.push([l2Bot(T[1]!), l2Top(T[3]!)]); // Bb
+    forcedColor.push([l2Bot(T[2]!), l2Top(T[4]!)]); // C
+    forcedColor.push([l2Bot(T[3]!), l2Top(T[5]!)]); // D
+  }
+  // 锁顶与钥匙位同色（同 rank）
+  for (let i = 0; i < lockIds.length; i++) {
+    const lid = lockIds[i]!;
+    for (const kid of keyIds) {
+      const lr = cards.find((c) => c.id === lid)?.rank;
+      const kr = cards.find((c) => c.id === kid)?.rank;
+      if (lr && kr && lr === kr) forcedColor.push([lid, kid]);
+    }
+  }
+
+  const painted = paintSuitsOnLevel(cards, stock, forcedColor, rand);
+  // H1：每把锁的同色同点全场 2～4 张（路径锁稀缺）
+  const enforced = enforceLockKeyScarcity(
+    painted.cards,
+    painted.stock,
+    lockIds,
+    forcedColor,
+    rand,
+    2,
+    4,
+  );
+  if (!enforced.ok) return null;
+  cards = enforced.cards;
+  stock = enforced.stock;
+
+  // 库内钥匙靠前：早抽到 → 可被盖住 → 洗回再现；避免钉在最后一张
+  stock = orderStockKeysFront(stock, cards, lockIds, openTopRanks, rand);
+
+  const diffLabel = difficulty === 'extreme' ? '极难' : '困难';
   const level: Level = {
     id: 'level-01',
-    name: lockCount === 0 ? '1 · 先易后难' : `1 · 锁×${lockCount}`,
+    name:
+      lockCount === 0
+        ? `1 · ${diffLabel}`
+        : `1 · ${diffLabel}·锁×${lockCount}`,
     teachHint:
-      '前段桌上连消即可；到中层后请抽牌配对。无步可消时会判定失败',
+      difficulty === 'extreme'
+        ? '极难局：满锁+薄库，钥匙很少。同点同花色（♥/♠）才能消'
+        : '同点且同花色才能消（红♥ 或 黑♠）。清桌即胜；每 3 局一极难',
     coverThreshold: 0.12,
     cards,
     stock,
@@ -259,6 +344,7 @@ function dealOnce(
   const meta: Level01DealMeta = {
     seed,
     layoutId: layout.id,
+    difficulty,
     lockCount,
     topology: lockCount >= 2 ? topology : 'independent',
     lockIds,
@@ -289,6 +375,7 @@ function buildLeanStock(
   cards: { rank: Rank }[],
   l1NeedStock: Rank[],
   rand: () => number,
+  accessCap = 1,
 ): Array<{ id: string; rank: Rank }> {
   const count = new Map<Rank, number>();
   for (const c of cards) count.set(c.rank, (count.get(c.rank) ?? 0) + 1);
@@ -302,13 +389,11 @@ function buildLeanStock(
   };
 
   // 只对「桌上已是偶数」的 L1 点加 1 张伙伴（会变成奇数，下一步补齐再 +1 → 库内一对）
-  // 桌上已是奇数的点：parity 会给 1 张，不必再预加
   const uniqNeed = [...new Set(l1NeedStock)];
   shuffleInPlace(uniqNeed, rand);
   let accessPairs = 0;
-  const ACCESS_PAIR_CAP = 2; // 最多 2 组「库内对」= +4 张；再加奇点补齐
   for (const r of uniqNeed) {
-    if (accessPairs >= ACCESS_PAIR_CAP) break;
+    if (accessPairs >= accessCap) break;
     if ((count.get(r) ?? 0) % 2 === 1) continue; // 交给 parity 单张
     if ((stockCount.get(r) ?? 0) > 0) continue;
     push(r);
@@ -491,56 +576,133 @@ function repairParallelPeels(
   return true;
 }
 
-function orderStock(
-  stock: Array<{ id: string; rank: Rank }>,
-  avoid: Set<Rank>,
+type StockItem = { id: string; rank: Rank; suit?: Suit };
+
+/**
+ * 抽牌区排序：
+ * - stock[0] = 下一张可抽
+ * - 锁的同色同点（钥匙）尽量靠前，便于早进抽出叠、被后续翻牌盖住、洗回再显
+ * - 避免钥匙钉在队列末尾（玩家会觉得故意藏到最后）
+ * - 开局第一张尽量避开 L2 free 顶点数（少狂抽成对）
+ */
+function orderStockKeysFront(
+  stock: StockItem[],
+  board: Array<{ id: string; rank: Rank; suit?: Suit }>,
+  lockIds: string[],
+  avoidOpenRanks: Set<Rank>,
   rand: () => number,
-): Array<{ id: string; rank: Rank }> {
+): StockItem[] {
   if (stock.length === 0) return stock;
-  const ranks = stock.map((s) => s.rank);
-  shuffleInPlace(ranks, rand);
-  const idx = ranks.findIndex((r) => !avoid.has(r));
-  if (idx > 0) {
-    const [r] = ranks.splice(idx, 1);
-    ranks.unshift(r!);
+
+  const lockKeys = new Set<string>();
+  for (const lid of lockIds) {
+    const c = board.find((x) => x.id === lid);
+    if (c?.suit) lockKeys.add(matchKey(c.rank, c.suit));
   }
-  return ranks.map((rank, i) => ({
+
+  const isKey = (s: StockItem) =>
+    !!s.suit && lockKeys.has(matchKey(s.rank, s.suit));
+
+  const keys = stock.filter(isKey);
+  const rest = stock.filter((s) => !isKey(s));
+  shuffleInPlace(keys, rand);
+  shuffleInPlace(rest, rand);
+
+  const out: StockItem[] = [];
+
+  // 第一张：优先非钥匙、且避开开局 free 顶
+  const firstIdx = rest.findIndex((s) => !avoidOpenRanks.has(s.rank));
+  if (firstIdx >= 0) {
+    out.push(rest.splice(firstIdx, 1)[0]!);
+  } else if (rest.length > 0) {
+    out.push(rest.shift()!);
+  } else if (keys.length > 0) {
+    // 库几乎全是钥匙：仍把钥匙放前，但尽量不拿 avoid 的
+    const kIdx = keys.findIndex((s) => !avoidOpenRanks.has(s.rank));
+    out.push(keys.splice(kIdx >= 0 ? kIdx : 0, 1)[0]!);
+  }
+
+  // 其余钥匙紧随其后（靠前区）
+  out.push(...keys);
+  // 非钥匙垫后
+  out.push(...rest);
+
+  // 保险：若唯一一张钥匙落在最后且库长≥3，与前半交换
+  if (out.length >= 3) {
+    const keyPositions = out
+      .map((s, i) => (isKey(s) ? i : -1))
+      .filter((i) => i >= 0);
+    if (keyPositions.length > 0) {
+      const lastKeyAt = keyPositions[keyPositions.length - 1]!;
+      if (lastKeyAt === out.length - 1) {
+        const swapAt = Math.max(1, Math.floor(out.length / 3));
+        const tmp = out[swapAt]!;
+        out[swapAt] = out[lastKeyAt]!;
+        out[lastKeyAt] = tmp;
+      }
+    }
+  }
+
+  return out.map((s, i) => ({
     id: `s${String(i + 1).padStart(2, '0')}`,
-    rank,
+    rank: s.rank,
+    suit: s.suit,
   }));
 }
 
 export function dealLevel01(
   seed: number,
-  maxAttempts = 16,
+  maxAttempts = 40,
+  difficulty: DealDifficulty = 'hard',
 ): { level: Level; meta: Level01DealMeta } {
-  let fallback: { level: Level; meta: Level01DealMeta } | null = null;
+  /** 密度已过、可清未过的最后一局（extreme 兜底；hard 尽量不用） */
+  let densityOk: { level: Level; meta: Level01DealMeta } | null = null;
+
   for (let a = 0; a < maxAttempts; a++) {
     const s = (seed + a * 9973) >>> 0;
-    const dealt = dealOnce(s);
+    const dealt = dealOnce(s, difficulty);
     if (!dealt) continue;
-    fallback = dealt;
-    try {
-      if (canFullyClear(dealt.level, s + 1)) return dealt;
-    } catch {
-      /* retry */
+    if (!passKeyScarcity(dealt.level, dealt.meta, 2, 4)) continue;
+    const minBoard = difficulty === 'extreme' ? 0.75 : 0.65;
+    if (!passKeyOnBoard(dealt.level, dealt.meta, minBoard)) continue;
+    densityOk = dealt;
+    if (passClearGreedy(dealt.level, s)) return dealt;
+  }
+
+  // H1b：hard 禁止「不可清也发」——继续扩 attempt
+  if (difficulty === 'hard') {
+    for (let a = maxAttempts; a < maxAttempts + 40; a++) {
+      const s = (seed + a * 9973) >>> 0;
+      const dealt = dealOnce(s, difficulty);
+      if (!dealt) continue;
+      if (!passKeyScarcity(dealt.level, dealt.meta, 2, 4)) continue;
+      if (!passKeyOnBoard(dealt.level, dealt.meta, 0.65)) continue;
+      densityOk = dealt;
+      if (passClearGreedy(dealt.level, s)) return dealt;
     }
   }
-  // 过滤全失败时仍返回最后一局（可玩；验收贪心非完备）
-  if (fallback) return fallback;
+
+  // extreme：密度合格即可兜底；hard 仅在实在找不到可清时才退回密度局（避免 throw）
+  if (densityOk) return densityOk;
   throw new Error('dealLevel01: failed to generate');
 }
 
-export function buildLevel01(seed?: number): Level {
+export function buildLevel01(
+  seed?: number,
+  difficulty: DealDifficulty = 'hard',
+): Level {
   const s =
     seed ??
     (typeof crypto !== 'undefined' && 'getRandomValues' in crypto
       ? crypto.getRandomValues(new Uint32Array(1))[0]!
       : (Date.now() ^ (Math.random() * 1e9)) >>> 0);
-  return dealLevel01(s).level;
+  return dealLevel01(s, 40, difficulty).level;
 }
 
-export function buildLevel01WithMeta(seed?: number): {
+export function buildLevel01WithMeta(
+  seed?: number,
+  difficulty: DealDifficulty = 'hard',
+): {
   level: Level;
   meta: Level01DealMeta;
 } {
@@ -549,5 +711,5 @@ export function buildLevel01WithMeta(seed?: number): {
     (typeof crypto !== 'undefined' && 'getRandomValues' in crypto
       ? crypto.getRandomValues(new Uint32Array(1))[0]!
       : (Date.now() ^ (Math.random() * 1e9)) >>> 0);
-  return dealLevel01(s);
+  return dealLevel01(s, 40, difficulty);
 }

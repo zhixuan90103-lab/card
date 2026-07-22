@@ -10,6 +10,7 @@ const miniLevel: Level = {
     {
       id: 'b1',
       rank: 'A',
+      suit: 'S',
       layer: 0,
       x: 0,
       y: 0,
@@ -19,6 +20,7 @@ const miniLevel: Level = {
     {
       id: 'b2',
       rank: 'K',
+      suit: 'S',
       layer: 0,
       x: 120,
       y: 0,
@@ -28,6 +30,7 @@ const miniLevel: Level = {
     {
       id: 't1',
       rank: '2',
+      suit: 'H',
       layer: 1,
       x: 20,
       y: 20,
@@ -36,9 +39,9 @@ const miniLevel: Level = {
     },
   ],
   stock: [
-    { id: 's1', rank: '2' },
-    { id: 's2', rank: 'A' },
-    { id: 's3', rank: 'K' },
+    { id: 's1', rank: '2', suit: 'H' },
+    { id: 's2', rank: 'A', suit: 'S' },
+    { id: 's3', rank: 'K', suit: 'S' },
   ],
 };
 
@@ -87,42 +90,135 @@ describe('isFree / pickCard', () => {
 });
 
 describe('selection / match / win', () => {
-  it('same rank removes pair; different reselects', () => {
+  it('same rank+color removes pair; different color same rank does not', () => {
     const level: Level = {
       id: 'pair',
       cards: [
-        { id: 'a1', rank: 'A', layer: 0, x: 0, y: 0, w: 50, h: 50 },
-        { id: 'a2', rank: 'A', layer: 0, x: 60, y: 0, w: 50, h: 50 },
-        { id: 'k1', rank: 'K', layer: 0, x: 120, y: 0, w: 50, h: 50 },
+        { id: 'a1', rank: 'A', suit: 'H', layer: 0, x: 0, y: 0, w: 50, h: 50 },
+        { id: 'a2', rank: 'A', suit: 'H', layer: 0, x: 60, y: 0, w: 50, h: 50 },
+        { id: 'a3', rank: 'A', suit: 'S', layer: 0, x: 120, y: 0, w: 50, h: 50 },
+        { id: 'k1', rank: 'K', suit: 'S', layer: 0, x: 180, y: 0, w: 50, h: 50 },
       ],
       stock: [],
     };
     const session = new GameSession(level);
     expect(session.tapCard('a1').matched).toBe(false);
     expect(session.getState().selectedId).toBe('a1');
-    // reselect different
+    // reselect different rank
     expect(session.tapCard('k1').reselected).toBe(true);
     expect(session.getState().selectedId).toBe('k1');
     // cancel by re-tap
     expect(session.tapCard('k1').cancelled).toBe(true);
     expect(session.getState().selectedId).toBeNull();
-    // match
+    // 红桃 A + 红桃 A 可消
     session.tapCard('a1');
     expect(session.tapCard('a2').matched).toBe(true);
     expect(session.getState().cards['a1']!.alive).toBe(false);
     expect(session.getState().cards['a2']!.alive).toBe(false);
+    // 黑桃 A 不能与 K 消
+    session.tapCard('a3');
+    expect(session.tapCard('k1').reselected).toBe(true);
+  });
+
+  it('same rank different color does not match', () => {
+    const level: Level = {
+      id: 'color-block',
+      cards: [
+        { id: 'r5', rank: '5', suit: 'H', layer: 0, x: 0, y: 0, w: 50, h: 50 },
+        { id: 'b5', rank: '5', suit: 'S', layer: 0, x: 60, y: 0, w: 50, h: 50 },
+      ],
+      stock: [],
+    };
+    const session = new GameSession(level);
+    session.tapCard('r5');
+    expect(session.tapCard('b5').matched).toBe(false);
+    expect(session.getState().cards['r5']!.alive).toBe(true);
+    expect(session.getState().cards['b5']!.alive).toBe(true);
+  });
+
+  it('trims surplus stock when board no longer needs those ranks', () => {
+    const level: Level = {
+      id: 'trim',
+      cards: [
+        { id: 'p4', rank: '4', suit: 'H', layer: 0, x: 0, y: 0, w: 50, h: 50 },
+        { id: 'p4b', rank: '4', suit: 'H', layer: 0, x: 60, y: 0, w: 50, h: 50 },
+        { id: 'p6', rank: '6', suit: 'S', layer: 0, x: 120, y: 0, w: 50, h: 50 },
+        { id: 'p6b', rank: '6', suit: 'S', layer: 0, x: 180, y: 0, w: 50, h: 50 },
+      ],
+      stock: [
+        { id: 's1', rank: 'K', suit: 'S' },
+        { id: 's2', rank: 'K', suit: 'S' },
+      ],
+    };
+    // 桌：两张 4♥ + 两张 6♠；库：一对 K — 消掉 6 后 K 成对工具应回收
+    const session = new GameSession(level);
+    session.tapCard('p6');
+    session.tapCard('p6b');
+    const st = session.getState();
+    expect(st.cards['p6']!.alive).toBe(false);
+    expect(st.cards['s1']!.alive).toBe(false);
+    expect(st.cards['s2']!.alive).toBe(false);
+    expect(st.stock.length + st.waste.length).toBe(0);
+    // 桌上两张 4♥ 仍在，可互消
+    expect(st.cards['p4']!.alive).toBe(true);
+    expect(st.cards['p4b']!.alive).toBe(true);
+  });
+
+  it('keeps one stock partner when single board card needs it', () => {
+    const level: Level = {
+      id: 'trim-keep',
+      cards: [
+        { id: 'p4', rank: '4', suit: 'H', layer: 0, x: 0, y: 0, w: 50, h: 50 },
+        { id: 'p4b', rank: '4', suit: 'H', layer: 0, x: 60, y: 0, w: 50, h: 50 },
+        { id: 'p6', rank: '6', suit: 'S', layer: 0, x: 120, y: 0, w: 50, h: 50 },
+        { id: 'p6b', rank: '6', suit: 'S', layer: 0, x: 180, y: 0, w: 50, h: 50 },
+      ],
+      stock: [
+        { id: 's1', rank: '4', suit: 'H' },
+        { id: 's2', rank: '4', suit: 'H' },
+      ],
+    };
+    const session = new GameSession(level);
+    // 先消一对 4（桌+桌），桌上剩 6 对；库里两张 4 对桌上 6 无用 → 回收
+    session.tapCard('p4');
+    session.tapCard('p4b');
+    let st = session.getState();
+    expect(st.cards['s1']!.alive).toBe(false);
+    expect(st.cards['s2']!.alive).toBe(false);
+
+    // 新局：桌一张 4 + 库一张 4 应保留
+    const level2: Level = {
+      id: 'trim-keep2',
+      cards: [
+        { id: 'a', rank: '4', suit: 'H', layer: 0, x: 0, y: 0, w: 50, h: 50 },
+        { id: 'b', rank: '4', suit: 'H', layer: 0, x: 60, y: 0, w: 50, h: 50 },
+      ],
+      stock: [
+        { id: 's1', rank: 'K', suit: 'S' },
+        { id: 's2', rank: 'K', suit: 'S' },
+        { id: 's3', rank: 'Q', suit: 'H' },
+        { id: 's4', rank: 'Q', suit: 'H' },
+      ],
+    };
+    const s2 = new GameSession(level2);
+    s2.tapCard('a');
+    s2.tapCard('b');
+    // 清桌后 reclaim 全库
+    st = s2.getState();
+    expect(st.status).toBe('won');
+    expect(st.stock.length + st.waste.length).toBe(0);
   });
 
   it('win when puzzle clears; leftover stock is reclaimed (tool, not goal)', () => {
     const level: Level = {
       id: 'win',
       cards: [
-        { id: 'a1', rank: 'A', layer: 0, x: 0, y: 0, w: 50, h: 50 },
-        { id: 'a2', rank: 'A', layer: 0, x: 60, y: 0, w: 50, h: 50 },
+        { id: 'a1', rank: 'A', suit: 'H', layer: 0, x: 0, y: 0, w: 50, h: 50 },
+        { id: 'a2', rank: 'A', suit: 'H', layer: 0, x: 60, y: 0, w: 50, h: 50 },
       ],
       stock: [
-        { id: 's1', rank: 'K' },
-        { id: 's2', rank: 'K' },
+        { id: 's1', rank: 'K', suit: 'S' },
+        { id: 's2', rank: 'K', suit: 'S' },
       ],
     };
     const session = new GameSession(level);
@@ -225,12 +321,12 @@ describe('undo / restart', () => {
 });
 
 describe('hasImmediatePair', () => {
-  it('detects free pair of same rank', () => {
+  it('detects free pair of same rank+color', () => {
     const level: Level = {
       id: 'imm',
       cards: [
-        { id: 'a1', rank: 'A', layer: 0, x: 0, y: 0, w: 40, h: 40 },
-        { id: 'a2', rank: 'A', layer: 0, x: 50, y: 0, w: 40, h: 40 },
+        { id: 'a1', rank: 'A', suit: 'H', layer: 0, x: 0, y: 0, w: 40, h: 40 },
+        { id: 'a2', rank: 'A', suit: 'H', layer: 0, x: 50, y: 0, w: 40, h: 40 },
       ],
       stock: [],
     };

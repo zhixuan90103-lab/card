@@ -5,8 +5,10 @@ export {
   buildLevel01,
   buildLevel01WithMeta,
   dealLevel01,
+  difficultyForRun,
   LEVEL01_DEAL_STOCK_TARGET,
   LEVEL01_MAX_LOCKS,
+  type DealDifficulty,
   type Level01DealMeta,
 } from './level01Deal';
 

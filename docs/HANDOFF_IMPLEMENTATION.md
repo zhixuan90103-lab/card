@@ -157,11 +157,13 @@ MAX_DPR       = 2 或 3
 
 ### M1 Done（可第二段再开）
 
-- [ ] 10～15 关 + 教学 + 顿悟关 **（现仅 Level01 单模板 + seed）**  
+- [x] **内容 D21：单关无限 seed**（再来一局 / 重打 seed）  
 - [ ] iPhone 15 关键清单（build 体积已有记录）  
 - [ ] 2～3 人外放话术达标  
+- [~] 教学/顿悟引导加强（可选）  
 
 **缺口对齐：** `docs/changelog/2026-07-22_gap_vs_notes.md`  
+**内容定稿：** `docs/changelog/2026-07-22_content_single_infinite.md`  
 
 ---
 

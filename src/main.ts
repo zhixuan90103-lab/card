@@ -7,7 +7,14 @@ import {
   STOCK_STACK_MAX_VISIBLE,
   WASTE_RECT,
 } from './data/layout';
-import { LEVELS, nextLevel, dealNewLevel01 } from './data/levels';
+import {
+  CONTENT_MODE,
+  difficultyForRun,
+  formatRunTitle,
+  replayRun,
+  startNewRun,
+  type RunDeal,
+} from './data/levels';
 import { createPixiApp } from './render/app';
 import { CardRenderer } from './render/cards';
 import { Hud } from './ui/hud';
@@ -28,12 +35,13 @@ function syncPileRects(session: GameSession): void {
 }
 
 async function main(): Promise<void> {
-  /** 每局独立 seed：布局骨架同，点数/锁位随机 */
-  let level: Level = dealNewLevel01();
+  /** 单关无限：局号 + seed；第 3/6/9… 局极难 */
+  let runIndex = 1;
+  let run: RunDeal = startNewRun(undefined, difficultyForRun(1));
+  let level: Level = run.level;
   let session = new GameSession(level, {
     shuffleSeed: Math.floor(Math.random() * 1e9),
   });
-  /** Draws without a match since last soft-tip reset (for soft stuck). */
   let drawsWithoutMatch = 0;
   let softTipShown = false;
 
@@ -49,8 +57,10 @@ async function main(): Promise<void> {
 
   let hud!: Hud;
 
-  const loadLevel = (next: Level) => {
-    level = next;
+  const applyRun = (next: RunDeal, opts: { bumpIndex: boolean }) => {
+    run = next;
+    level = next.level;
+    if (opts.bumpIndex) runIndex += 1;
     session = new GameSession(level, {
       shuffleSeed: Math.floor(Math.random() * 1e9),
     });
@@ -61,16 +71,20 @@ async function main(): Promise<void> {
     refresh();
   };
 
-  const restartFreshDeal = () => {
-    level = dealNewLevel01();
-    session = new GameSession(level, {
-      shuffleSeed: Math.floor(Math.random() * 1e9),
+  /** 新 seed 新局（按新局号取难度） */
+  const newRun = () => {
+    const nextIdx = runIndex + 1;
+    applyRun(startNewRun(undefined, difficultyForRun(nextIdx)), {
+      bumpIndex: true,
     });
-    drawsWithoutMatch = 0;
-    softTipShown = false;
-    syncPileRects(session);
-    cards.bootstrap(session.getState());
-    refresh();
+  };
+
+  /** 同一 seed 重打（保留难度档） */
+  const replaySameSeed = () => {
+    applyRun(
+      replayRun(run.meta.seed, run.meta.difficulty ?? 'hard'),
+      { bumpIndex: false },
+    );
   };
 
   const softTipText = (): string | null => {
@@ -85,11 +99,10 @@ async function main(): Promise<void> {
     const hard = isHardDead(st);
     hud.sync(st, {
       canUndo: session.canUndo(),
-      levelName: level.name ?? level.id,
+      levelName: formatRunTitle(run.meta, runIndex),
       teachHint: level.teachHint,
       softTip: softTipText(),
       hardDead: hard,
-      hasNextLevel: !!nextLevel(level.id),
     });
   };
 
@@ -101,7 +114,6 @@ async function main(): Promise<void> {
       const { drew } = session.draw();
       if (drew) {
         drawsWithoutMatch += 1;
-        // Soft tip: no immediate pair path and drew roughly a full cycle
         const st = session.getState();
         if (
           isSoftStuck(st) &&
@@ -120,12 +132,11 @@ async function main(): Promise<void> {
       }
     },
     onRestart: () => {
-      // 重开：同几何骨架，重新 deal（锁/钥匙/点数随机）
-      restartFreshDeal();
+      // 重开 = 同 seed 再打
+      replaySameSeed();
     },
-    onNextLevel: () => {
-      const n = nextLevel(level.id);
-      if (n) loadLevel(n);
+    onNewRun: () => {
+      newRun();
     },
   });
 
@@ -141,13 +152,12 @@ async function main(): Promise<void> {
     const rect = frame.getBoundingClientRect();
     const p = screenToDesign(clientX, clientY, rect);
 
-    // Hit full stock stack footprint (top + leftward horizontal peek)
     const stockVis = Math.min(
       session.getState().stock.length,
       STOCK_STACK_MAX_VISIBLE,
     );
     const stockExtra = Math.max(0, stockVis - 1);
-    const stockLeft = STOCK_RECT.x + stockExtra * STOCK_STACK_DX; // DX < 0
+    const stockLeft = STOCK_RECT.x + stockExtra * STOCK_STACK_DX;
     const stockRight = STOCK_RECT.x + STOCK_RECT.w;
     if (
       p.x >= stockLeft &&
@@ -155,7 +165,6 @@ async function main(): Promise<void> {
       p.y >= STOCK_RECT.y &&
       p.y <= STOCK_RECT.y + STOCK_RECT.h
     ) {
-      // 抽牌区只抽牌，不参与「清桌后收尾配对」
       const stockBefore =
         session.getState().stock.length + session.getState().waste.length;
       const { drew } = session.draw();
@@ -194,7 +203,7 @@ async function main(): Promise<void> {
   };
 
   canvas.addEventListener(
-    'pointerup',
+    'pointerdown',
     (e) => {
       e.preventDefault();
       onPointer(e.clientX, e.clientY);
@@ -213,10 +222,15 @@ async function main(): Promise<void> {
   }
 
   console.info(
-    '[card-mvp] M1 —',
-    LEVELS.length,
-    'levels, start',
-    level.id,
+    '[card-mvp]',
+    CONTENT_MODE,
+    'run',
+    runIndex,
+    run.meta.difficulty,
+    'seed',
+    run.meta.seed,
+    'locks',
+    run.meta.lockCount,
   );
 }
 

@@ -13,17 +13,19 @@ function designPct(x: number, y: number): { left: string; top: string } {
 export type HudHandlers = {
   onDraw: () => void;
   onUndo: () => void;
+  /** 同 seed 重打 */
   onRestart: () => void;
-  onNextLevel: () => void;
+  /** 新 seed 再来一局（单关无限） */
+  onNewRun: () => void;
 };
 
 export type HudSyncOpts = {
   canUndo: boolean;
+  /** 顶栏：第 N 局 · 锁 · seed */
   levelName: string;
   teachHint?: string;
   softTip?: string | null;
   hardDead?: boolean;
-  hasNextLevel: boolean;
 };
 
 export class Hud {
@@ -34,8 +36,9 @@ export class Hud {
   private winOverlay: HTMLElement;
   private deadOverlay: HTMLElement;
   private undoBtn: HTMLButtonElement;
-  private winNextBtn: HTMLButtonElement;
+  private winNewRunBtn: HTMLButtonElement;
   private winTitle: HTMLElement;
+  private winSub: HTMLElement;
 
   constructor(host: HTMLElement, handlers: HudHandlers) {
     host.innerHTML = '';
@@ -81,7 +84,8 @@ export class Hud {
     const drawBtn = mkBtn('抽牌', handlers.onDraw);
     this.undoBtn = mkBtn('撤销', handlers.onUndo);
     const restartBtn = mkBtn('重开', handlers.onRestart, '#555');
-    bar.append(drawBtn, this.undoBtn, restartBtn);
+    const newRunBtn = mkBtn('新局', handlers.onNewRun, '#3d6b4f');
+    bar.append(drawBtn, this.undoBtn, restartBtn, newRunBtn);
 
     this.levelLabel = document.createElement('div');
     this.levelLabel.style.cssText = `
@@ -148,11 +152,20 @@ export class Hud {
       z-index: 5;
     `;
     this.winTitle = document.createElement('div');
-    this.winTitle.textContent = '胜利！谜题区已清空';
+    this.winTitle.textContent = '胜利！';
     this.winTitle.style.cssText = 'color:#fff;font-size:22px;font-weight:700;';
-    this.winNextBtn = mkBtn('下一关', handlers.onNextLevel);
-    const winRestart = mkBtn('重开本关', handlers.onRestart, '#555');
-    this.winOverlay.append(this.winTitle, this.winNextBtn, winRestart);
+    this.winSub = document.createElement('div');
+    this.winSub.textContent = '几何不变 · 再来一局换新配点';
+    this.winSub.style.cssText =
+      'color:#c8d4e8;font-size:13px;text-align:center;padding:0 24px;';
+    this.winNewRunBtn = mkBtn('再来一局', handlers.onNewRun);
+    const winReplay = mkBtn('重打本 seed', handlers.onRestart, '#555');
+    this.winOverlay.append(
+      this.winTitle,
+      this.winSub,
+      this.winNewRunBtn,
+      winReplay,
+    );
 
     this.deadOverlay = document.createElement('div');
     this.deadOverlay.style.cssText = `
@@ -172,15 +185,23 @@ export class Hud {
     deadTitle.style.cssText = 'color:#fff;font-size:22px;font-weight:700;';
     const deadSub = document.createElement('div');
     deadSub.textContent = '当前没有可配对的牌了';
-    deadSub.style.cssText = 'color:#c8d4e8;font-size:14px;text-align:center;padding:0 24px;';
+    deadSub.style.cssText =
+      'color:#c8d4e8;font-size:14px;text-align:center;padding:0 24px;';
     const deadSub2 = document.createElement('div');
-    deadSub2.textContent = '可以撤销上一步，或重开本关';
+    deadSub2.textContent = '可撤销、重打本 seed，或开新局';
     deadSub2.style.cssText = 'color:#8fa3c1;font-size:13px;';
     const deadUndo = mkBtn('撤销', handlers.onUndo);
-    const deadRestart = mkBtn('重开本关', handlers.onRestart, '#555');
-    this.deadOverlay.append(deadTitle, deadSub, deadSub2, deadUndo, deadRestart);
+    const deadReplay = mkBtn('重打本 seed', handlers.onRestart, '#555');
+    const deadNew = mkBtn('新局', handlers.onNewRun, '#3d6b4f');
+    this.deadOverlay.append(
+      deadTitle,
+      deadSub,
+      deadSub2,
+      deadUndo,
+      deadReplay,
+      deadNew,
+    );
 
-    // Labels sit just above each pile rect (design → %)
     const pileHintPos = designPct(STOCK_RECT.x, STOCK_RECT.y - 18);
     const pileHint = document.createElement('div');
     pileHint.style.cssText = `
@@ -242,10 +263,8 @@ export class Hud {
       this.deadOverlay.style.display = 'none';
       this.statusLabel.textContent = '胜利';
       this.tipLabel.style.display = 'none';
-      this.winNextBtn.style.display = opts.hasNextLevel ? 'inline-block' : 'none';
-      this.winTitle.textContent = opts.hasNextLevel
-        ? '胜利！谜题区已清空'
-        : '全部通关！';
+      this.winTitle.textContent = '胜利！谜题区已清空';
+      this.winSub.textContent = '单关无限 · 再来一局换新配点';
       return;
     }
 
@@ -267,6 +286,6 @@ export class Hud {
     }
 
     this.statusLabel.textContent =
-      opts.teachHint ?? '同点配对 · 盖住的点不到';
+      opts.teachHint ?? '同点配对 · 盖住的点不到 · 清桌即胜';
   }
 }

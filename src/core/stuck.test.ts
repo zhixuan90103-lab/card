@@ -6,12 +6,12 @@ import type { Level } from './types';
 const simple: Level = {
   id: 's',
   cards: [
-    { id: 'a1', rank: 'A', layer: 0, x: 0, y: 0, w: 40, h: 40 },
-    { id: 'k1', rank: 'K', layer: 0, x: 50, y: 0, w: 40, h: 40 },
+    { id: 'a1', rank: 'A', suit: 'S', layer: 0, x: 0, y: 0, w: 40, h: 40 },
+    { id: 'k1', rank: 'K', suit: 'S', layer: 0, x: 50, y: 0, w: 40, h: 40 },
   ],
   stock: [
-    { id: 's1', rank: 'A' },
-    { id: 's2', rank: 'Q' },
+    { id: 's1', rank: 'A', suit: 'S' },
+    { id: 's2', rank: 'Q', suit: 'S' },
   ],
 };
 
@@ -27,21 +27,24 @@ describe('stuck detection', () => {
     const level: Level = {
       id: 'dead',
       cards: [
-        { id: 'a1', rank: 'A', layer: 0, x: 0, y: 0, w: 40, h: 40 },
-        { id: 'k1', rank: 'K', layer: 0, x: 50, y: 0, w: 40, h: 40 },
+        { id: 'a1', rank: 'A', suit: 'S', layer: 0, x: 0, y: 0, w: 40, h: 40 },
+        { id: 'k1', rank: 'K', suit: 'S', layer: 0, x: 50, y: 0, w: 40, h: 40 },
       ],
-      stock: [{ id: 's1', rank: 'Q' }, { id: 's2', rank: 'Q' }],
+      stock: [
+        { id: 's1', rank: 'Q', suit: 'H' },
+        { id: 's2', rank: 'Q', suit: 'H' },
+      ],
     };
     const st = createStateFromLevel(level);
     expect(isHardDead(st)).toBe(true);
   });
 
-  it('not stuck when immediate pair', () => {
+  it('not stuck when immediate pair (same rank+color)', () => {
     const level: Level = {
       id: 'pair',
       cards: [
-        { id: 'a1', rank: 'A', layer: 0, x: 0, y: 0, w: 40, h: 40 },
-        { id: 'a2', rank: 'A', layer: 0, x: 50, y: 0, w: 40, h: 40 },
+        { id: 'a1', rank: 'A', suit: 'H', layer: 0, x: 0, y: 0, w: 40, h: 40 },
+        { id: 'a2', rank: 'A', suit: 'H', layer: 0, x: 50, y: 0, w: 40, h: 40 },
       ],
       stock: [],
     };

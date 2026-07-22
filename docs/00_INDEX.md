@@ -4,7 +4,9 @@
 
 > **新窗口开工：** 先读 [`HANDOFF_IMPLEMENTATION.md`](./HANDOFF_IMPLEMENTATION.md) → [`design/13_mvp_plan_and_todolist.md`](./design/13_mvp_plan_and_todolist.md)  
 > **Level01 现行规则总整理：** [`changelog/2026-07-22_level01_session_summary.md`](./changelog/2026-07-22_level01_session_summary.md)  
-> **笔记 vs 实现缺口：** [`changelog/2026-07-22_gap_vs_notes.md`](./changelog/2026-07-22_gap_vs_notes.md)
+> **笔记 vs 实现缺口：** [`changelog/2026-07-22_gap_vs_notes.md`](./changelog/2026-07-22_gap_vs_notes.md)  
+> **内容策略 D21 单关无限：** [`changelog/2026-07-22_content_single_infinite.md`](./changelog/2026-07-22_content_single_infinite.md)  
+> **D22 红黑配对：** [`changelog/2026-07-22_color_match_d22.md`](./changelog/2026-07-22_color_match_d22.md)
 
 ---
 
@@ -25,7 +27,9 @@
 | [design/11_viewport_iphone15.md](./design/11_viewport_iphone15.md) | **393×852 + PC 手机框 + 真机清单** |
 | [design/12_tech_gap_audit.md](./design/12_tech_gap_audit.md) | **技术反查（第二轮 · 检索结案）** |
 | [design/13_mvp_plan_and_todolist.md](./design/13_mvp_plan_and_todolist.md) | **MVP 计划 + Todo List** |
-| [design/15_level_rank_design.md](./design/15_level_rank_design.md) | **Level01 配点不变量 R1–R15**（平行剥 / 精简 stock / 锁钥） |
+| [design/15_level_rank_design.md](./design/15_level_rank_design.md) | **Level01 配点不变量**（平行剥 / 精简 stock / 红黑） |
+| [design/16_path_lock_research_plan.md](./design/16_path_lock_research_plan.md) | **路径锁关卡设计 · 检索计划** |
+| [research/path-lock/00_INDEX.md](./research/path-lock/00_INDEX.md) | **路径锁检索成果**（含反查 `07_gap_audit`） |
 
 ---
 

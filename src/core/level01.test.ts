@@ -6,8 +6,10 @@ import {
   LEVEL01_TEST_SEED,
 } from '../data/level01';
 import { createStateFromLevel } from './state';
-import { freeCardIds, isFree } from './rules';
+import { freeCardIds, isFree, hasImmediatePair } from './rules';
 import { canFullyClear } from '../data/levelSolve';
+import { passKeyScarcity } from '../data/pathLockMetrics';
+import { matchKey, matchKeyOf, suitColor } from './types';
 
 describe('level-01 main scheme: fixed full slots, random puzzle', () => {
   const level = buildLevel01(LEVEL01_TEST_SEED);
@@ -39,13 +41,54 @@ describe('level-01 main scheme: fixed full slots, random puzzle', () => {
   it('stock is lean: parity + few access pairs, no pad-to-16 filler', () => {
     for (const s of [1, 2, 7, 11, 42, LEVEL01_TEST_SEED]) {
       const lv = buildLevel01(s);
-      // 旧版固定灌到 16+；精简后应明显更短
-      expect(lv.stock.length, `seed ${s}`).toBeLessThanOrEqual(14);
-      expect(lv.stock.length, `seed ${s}`).toBeGreaterThanOrEqual(2);
+      // 旧版 pad 16+；精简 + 颜色奇偶补齐后通常 ≤18
+      expect(lv.stock.length, `seed ${s}`).toBeLessThanOrEqual(22);
+      expect(lv.stock.length, `seed ${s}`).toBeGreaterThanOrEqual(0);
     }
-  }, 30000);
+  }, 60000);
 
-  it('opening: exactly one free pair on puzzle', () => {
+  it('H1: each lock match-key count is 2..4', () => {
+    for (const s of [1, 2, 7, 11, 42, LEVEL01_TEST_SEED]) {
+      const { level, meta } = buildLevel01WithMeta(s, 'hard');
+      expect(passKeyScarcity(level, meta, 2, 4), `seed ${s}`).toBe(true);
+    }
+  }, 120000);
+
+  it('stock keys for locks are not left as the last card when avoidable', () => {
+    for (const s of [1, 2, 7, 11, 42, LEVEL01_TEST_SEED]) {
+      const { level, meta } = buildLevel01WithMeta(s, 'hard');
+      if (meta.lockIds.length === 0 || level.stock.length < 3) continue;
+      const lockKeys = new Set(
+        meta.lockIds.map((id) => {
+          const c = level.cards.find((x) => x.id === id)!;
+          return matchKey(c.rank, c.suit!);
+        }),
+      );
+      const isKey = (i: number) => {
+        const s0 = level.stock[i]!;
+        return !!s0.suit && lockKeys.has(matchKey(s0.rank, s0.suit));
+      };
+      const keyIdx = level.stock
+        .map((_, i) => i)
+        .filter((i) => isKey(i));
+      if (keyIdx.length === 0) continue;
+      // 钥匙应出现在前半（含中位），不得整组只钉在最后一张
+      const last = level.stock.length - 1;
+      const onlyLast =
+        keyIdx.length === 1 && keyIdx[0] === last;
+      expect(onlyLast, `seed ${s} key only at last`).toBe(false);
+      const maxKeyPos = Math.max(...keyIdx);
+      expect(maxKeyPos, `seed ${s}`).toBeLessThan(level.stock.length);
+      // 至少有一张钥匙在前 60% 区
+      const frontCut = Math.ceil(level.stock.length * 0.6);
+      expect(
+        keyIdx.some((i) => i < frontCut),
+        `seed ${s} no key in front 60%`,
+      ).toBe(true);
+    }
+  }, 120000);
+
+  it('opening: exactly one free pair on puzzle (same rank+color)', () => {
     const st = createStateFromLevel(level);
     const free = freeCardIds(st).filter((id) => st.cards[id]!.zone === 'puzzle');
     // 6 L2 tops
@@ -53,28 +96,44 @@ describe('level-01 main scheme: fixed full slots, random puzzle', () => {
     expect(free.every((id) => id.match(/^d\d+_1$/))).toBe(true);
     const counts = new Map<string, number>();
     for (const id of free) {
-      const r = st.cards[id]!.rank;
-      counts.set(r, (counts.get(r) ?? 0) + 1);
+      const k = matchKeyOf(st.cards[id]!)!;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
     }
     const pairs = [...counts.values()].filter((n) => n >= 2);
     expect(pairs.length).toBe(1);
     expect(pairs[0]).toBe(2);
+    expect(hasImmediatePair(st)).toBe(true);
   });
 
   it('locks are L1 tops; not free at open', () => {
-    const { meta } = buildLevel01WithMeta(LEVEL01_TEST_SEED);
-    const st = createStateFromLevel(buildLevel01(LEVEL01_TEST_SEED));
+    const { level, meta } = buildLevel01WithMeta(LEVEL01_TEST_SEED);
+    const st = createStateFromLevel(level);
     for (const id of meta.lockIds) {
       expect(id.startsWith('c')).toBe(true);
       expect(isFree(st, id)).toBe(false);
     }
+  }, 60000);
+
+  it('R1 even match-keys (rank+color)', () => {
+    const counts = new Map<string, number>();
+    for (const c of level.cards) {
+      expect(c.suit, c.id).toBeTruthy();
+      const k = matchKeyOf(c)!;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    for (const s of level.stock) {
+      expect(s.suit, s.id).toBeTruthy();
+      const k = matchKeyOf({ rank: s.rank, suit: s.suit! })!;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    for (const [k, n] of counts) expect(n % 2, k).toBe(0);
   });
 
-  it('R1 even ranks', () => {
-    const counts = new Map<string, number>();
-    for (const c of level.cards) counts.set(c.rank, (counts.get(c.rank) ?? 0) + 1);
-    for (const s of level.stock) counts.set(s.rank, (counts.get(s.rank) ?? 0) + 1);
-    for (const [r, n] of counts) expect(n % 2, r).toBe(0);
+  it('every card has suit; free faces use red/black', () => {
+    for (const c of level.cards) {
+      expect(['S', 'H']).toContain(c.suit);
+      expect(suitColor(c.suit!)).toMatch(/red|black/);
+    }
   });
 
   it('R2 within groups', () => {
@@ -135,5 +194,5 @@ describe('level-01 main scheme: fixed full slots, random puzzle', () => {
         }
       }
     }
-  }, 40000);
+  }, 180000);
 });

@@ -1,12 +1,20 @@
 import { mulberry32, shuffleInPlace } from './rng';
-import { isFree, isWon, puzzleAlive, reclaimUnusedDeck } from './rules';
+import {
+  isFree,
+  isWon,
+  puzzleAlive,
+  reclaimUnusedDeck,
+  trimSurplusDeck,
+} from './rules';
 import type {
   Card,
   CardId,
   GameState,
   Level,
   Rank,
+  Suit,
 } from './types';
+import { canMatchCards } from './types';
 
 const DEFAULT_COVER = 0.15;
 
@@ -45,7 +53,7 @@ export function createStateFromLevel(
     cards[def.id] = {
       id: def.id,
       rank: def.rank,
-      suit: def.suit,
+      suit: def.suit ?? ('S' as Suit),
       layer: def.layer,
       tier: def.tier ?? 0,
       rect: { x: def.x, y: def.y, w: def.w, h: def.h },
@@ -59,7 +67,7 @@ export function createStateFromLevel(
     cards[s.id] = {
       id: s.id,
       rank: s.rank,
-      suit: s.suit,
+      suit: s.suit ?? ('S' as Suit),
       layer: 0,
       tier: 0,
       // Stock/waste rects filled by layout helper in render; logical hit uses synced rect
@@ -210,13 +218,15 @@ export class GameSession {
       return { matched: false, cancelled: false, reselected: true };
     }
 
-    if (first.rank === card.rank) {
+    if (canMatchCards(first, card)) {
       this.removePair(next, first.id, id);
       next.selectedId = null;
       if (puzzleAlive(next).length === 0) {
         // 清桌即胜：未用完的抽牌区一并回收，不做「库内收尾配对」
         reclaimUnusedDeck(next);
       } else {
+        // 桌上已不需要的库牌成对回收，避免「桌剩 1 张、库还一摞」
+        trimSurplusDeck(next);
         // 抽出叠被消空时自动再翻一张（与本步同一 commit，撤销一并回退）
         this.ensureWasteHasCard(next);
       }

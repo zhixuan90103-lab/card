@@ -1,4 +1,10 @@
-/** Card rank — pair match is rank-only (suit is cosmetic). */
+/**
+ * 点数 + 红黑（D22）
+ * 本局只使用两种花色：
+ * - 红 = 仅红桃 ♥ (H)
+ * - 黑 = 仅黑桃 ♠ (S)
+ * 配对：同 rank 且同色（即同花色），异色不可消。
+ */
 export type Rank =
   | 'A'
   | '2'
@@ -14,9 +20,51 @@ export type Rank =
   | 'Q'
   | 'K';
 
-export type Suit = 'S' | 'H' | 'D' | 'C';
+/** 仅红桃 / 黑桃（方片、梅花不使用） */
+export type Suit = 'H' | 'S';
+
+export type CardColor = 'red' | 'black';
 
 export type CardId = string;
+
+export function suitColor(suit: Suit): CardColor {
+  return suit === 'H' ? 'red' : 'black';
+}
+
+/** 配对键：点数+颜色（如 5_red） */
+export function matchKey(rank: Rank, suit: Suit): string {
+  return `${rank}_${suitColor(suit)}`;
+}
+
+export function matchKeyOf(card: {
+  rank: Rank;
+  suit?: Suit;
+}): string | null {
+  if (!card.suit) return null;
+  return matchKey(card.rank, card.suit);
+}
+
+/** 两张可消：同点且同色（红桃配红桃 / 黑桃配黑桃） */
+export function canMatchCards(
+  a: { rank: Rank; suit?: Suit },
+  b: { rank: Rank; suit?: Suit },
+): boolean {
+  if (a.rank !== b.rank) return false;
+  if (!a.suit || !b.suit) return false;
+  return a.suit === b.suit;
+}
+
+export const SUIT_GLYPH: Record<Suit, string> = {
+  H: '♥',
+  S: '♠',
+};
+
+export function pickSuitForColor(
+  color: CardColor,
+  _rand?: () => number,
+): Suit {
+  return color === 'red' ? 'H' : 'S';
+}
 
 export type Rect = {
   x: number;
@@ -28,7 +76,8 @@ export type Rect = {
 export type Card = {
   id: CardId;
   rank: Rank;
-  suit?: Suit;
+  /** 必填：红黑匹配依赖花色 */
+  suit: Suit;
   /** Fine z within/across stacks (for isCovering + draw order) */
   layer: number;
   /**
@@ -52,6 +101,7 @@ export type Card = {
 export type LevelCardDef = {
   id: CardId;
   rank: Rank;
+  /** 缺省按黑桃；Level01 deal 会写入真实花色 */
   suit?: Suit;
   layer: number;
   /** Board tier L0=0, L1=1, … (default 0) */

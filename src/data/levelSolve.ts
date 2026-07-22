@@ -1,14 +1,12 @@
 /**
  * 配点验收：清谜题区（用于 deal 过滤）
- * 胜利 = 桌面清空；stock 是工具，不要求抽光。
- *
- * 策略：优先消 free 对；否则若库/抽出叠里有 free 需要的点，向该点抽；
- * 否则盲抽。比纯盲抽更贴近「会用抽牌区」的玩家。
+ * D22：配对键 = 点数 + 红黑
  */
 import { freeCardIds, isWon, puzzleAlive } from '../core/rules';
 import { createStateFromLevel } from '../core/state';
 import { mulberry32, shuffleInPlace } from '../core/rng';
-import type { CardId, GameState, Level, Rank } from '../core/types';
+import type { CardId, GameState, Level } from '../core/types';
+import { matchKeyOf } from '../core/types';
 
 const MAX_STEPS = 220;
 
@@ -47,56 +45,57 @@ function ensureWaste(state: GameState): void {
   if (state.waste.length === 0) flipStock(state);
 }
 
-function deckHasRank(state: GameState, rank: Rank): boolean {
+function deckHasKey(state: GameState, key: string): boolean {
   for (const id of state.stock) {
-    if (state.cards[id]?.rank === rank) return true;
+    const k = matchKeyOf(state.cards[id]!);
+    if (k === key) return true;
   }
   for (const id of state.waste) {
-    if (state.cards[id]?.rank === rank) return true;
+    const k = matchKeyOf(state.cards[id]!);
+    if (k === key) return true;
   }
   return false;
 }
 
-/** 抽/洗直到 waste 顶为 want，或库循环一轮仍没有 */
 function drawToward(
   state: GameState,
-  want: Set<Rank>,
+  want: Set<string>,
   rand: () => number,
 ): boolean {
   const limit = state.stock.length + state.waste.length + 2;
   for (let i = 0; i < limit; i++) {
     if (state.waste.length > 0) {
       const top = state.cards[state.waste[state.waste.length - 1]!]!;
-      if (want.has(top.rank)) return true;
+      const k = matchKeyOf(top);
+      if (k && want.has(k)) return true;
     }
     if (state.stock.length === 0) {
       if (state.waste.length === 0) return false;
-      // 抽出叠里是否还有目标（非顶）
-      const buried = state.waste.some((id) =>
-        want.has(state.cards[id]!.rank),
-      );
+      const buried = state.waste.some((id) => {
+        const k = matchKeyOf(state.cards[id]!);
+        return k != null && want.has(k);
+      });
       if (!buried) return false;
       recycle(state, rand);
     }
     if (!flipStock(state)) return false;
   }
-  return state.waste.length > 0 &&
-    want.has(state.cards[state.waste[state.waste.length - 1]!]!.rank);
+  if (state.waste.length === 0) return false;
+  const k = matchKeyOf(state.cards[state.waste[state.waste.length - 1]!]!);
+  return k != null && want.has(k);
 }
 
-function freeByRank(state: GameState): Map<Rank, CardId[]> {
-  const byRank = new Map<Rank, CardId[]>();
+function freeByMatchKey(state: GameState): Map<string, CardId[]> {
+  const by = new Map<string, CardId[]>();
   for (const id of freeCardIds(state)) {
-    const r = state.cards[id]!.rank;
-    if (!byRank.has(r)) byRank.set(r, []);
-    byRank.get(r)!.push(id);
+    const k = matchKeyOf(state.cards[id]!);
+    if (!k) continue;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k)!.push(id);
   }
-  return byRank;
+  return by;
 }
 
-/**
- * 验收：能否清完谜题区（允许残留 stock，清桌即胜）
- */
 export function canFullyClear(level: Level, solveSeed = 1): boolean {
   const state = createStateFromLevel(level);
   ensureWaste(state);
@@ -107,11 +106,10 @@ export function canFullyClear(level: Level, solveSeed = 1): boolean {
     if (isWon(state)) return true;
     if (puzzleAlive(state).length === 0) return true;
 
-    const byRank = freeByRank(state);
+    const byKey = freeByMatchKey(state);
 
-    // 1) 场上 free 成对 → 消（优先带 waste 的对，少打乱抽出叠）
     let pair: [CardId, CardId] | null = null;
-    for (const ids of byRank.values()) {
+    for (const ids of byKey.values()) {
       if (ids.length < 2) continue;
       const wasteId = ids.find((id) => state.cards[id]!.zone === 'waste');
       if (wasteId) {
@@ -128,14 +126,13 @@ export function canFullyClear(level: Level, solveSeed = 1): boolean {
       continue;
     }
 
-    // 2) free 单点 ∩ 库内有同点 → 抽到 waste 顶再配
-    const need = new Set<Rank>();
-    for (const [r, ids] of byRank) {
-      if (ids.length === 1 && deckHasRank(state, r)) need.add(r);
+    const need = new Set<string>();
+    for (const [k, ids] of byKey) {
+      if (ids.length === 1 && deckHasKey(state, k)) need.add(k);
     }
     if (need.size > 0) {
       if (drawToward(state, need, rand)) {
-        const by2 = freeByRank(state);
+        const by2 = freeByMatchKey(state);
         let did = false;
         for (const ids of by2.values()) {
           if (ids.length >= 2) {
@@ -150,7 +147,6 @@ export function canFullyClear(level: Level, solveSeed = 1): boolean {
       }
     }
 
-    // 3) 盲抽；连续空抽过多 → 判失败（避免洗回空转）
     idleDraws += 1;
     const deckN = state.stock.length + state.waste.length;
     if (deckN === 0 || idleDraws > Math.max(deckN * 2, 6)) return false;

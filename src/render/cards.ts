@@ -1,5 +1,6 @@
 import { Container, Graphics, Text, TextStyle } from 'pixi.js';
-import type { Card, CardId, GameState } from '../core/types';
+import type { Card, CardId, GameState, Suit } from '../core/types';
+import { SUIT_GLYPH, suitColor } from '../core/types';
 import { isFree } from '../core/rules';
 import {
   STOCK_RECT,
@@ -8,13 +9,21 @@ import {
   stockStackOffset,
 } from '../data/layout';
 
-const faceStyle = new TextStyle({
-  fontFamily: 'system-ui, -apple-system, sans-serif',
-  fontSize: 20,
-  fontWeight: '700',
-  fill: 0x1a1a1a,
-  align: 'center',
-});
+function faceStyleFor(suit: Suit | undefined): TextStyle {
+  const red = suit != null && suitColor(suit) === 'red';
+  return new TextStyle({
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    fontSize: 18,
+    fontWeight: '700',
+    fill: red ? 0xc0392b : 0x1a1a1a,
+    align: 'center',
+  });
+}
+
+function faceLabel(card: Card): string {
+  const g = card.suit ? SUIT_GLYPH[card.suit] : '';
+  return g ? `${card.rank}${g}` : card.rank;
+}
 
 const backStyle = new TextStyle({
   fontFamily: 'system-ui, sans-serif',
@@ -60,7 +69,10 @@ export class CardRenderer {
     root.eventMode = 'none';
 
     const body = new Graphics();
-    const label = new Text({ text: card.rank, style: faceStyle });
+    const label = new Text({
+      text: faceLabel(card),
+      style: faceStyleFor(card.suit),
+    });
     label.anchor.set(0.5);
     root.addChild(body, label);
     return { root, body, label, cardId: card.id };
@@ -137,8 +149,8 @@ export class CardRenderer {
             selected: state.selectedId === id,
             free: true,
           });
-          view.label.text = card.rank;
-          view.label.style = faceStyle;
+          view.label.text = faceLabel(card);
+          view.label.style = faceStyleFor(card.suit);
           view.label.x = STOCK_RECT.w / 2;
           view.label.y = STOCK_RECT.h / 2;
         } else {
@@ -170,8 +182,8 @@ export class CardRenderer {
           selected: state.selectedId === id,
           free,
         });
-        view.label.text = card.rank;
-        view.label.style = faceStyle;
+        view.label.text = faceLabel(card);
+        view.label.style = faceStyleFor(card.suit);
         view.label.x = WASTE_RECT.w / 2;
         view.label.y = WASTE_RECT.h / 2;
         continue;
@@ -191,8 +203,8 @@ export class CardRenderer {
         free,
       });
       if (free) {
-        view.label.text = card.rank;
-        view.label.style = faceStyle;
+        view.label.text = faceLabel(card);
+        view.label.style = faceStyleFor(card.suit);
         view.label.x = card.rect.w / 2;
         view.label.y = card.rect.h / 2;
       } else {

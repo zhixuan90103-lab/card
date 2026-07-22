@@ -5,7 +5,7 @@
  * - 坐标固定，重开不变
  * - 谜题变化只通过 rank / 锁钥 / stock（见 level01Deal）
  */
-import type { LevelCardDef, Rank } from '../core/types';
+import type { LevelCardDef, Rank, Suit } from '../core/types';
 import {
   CARD_W,
   CARD_H,
@@ -131,6 +131,8 @@ export function materializeCards(
       cards.push({
         id: `${g.key}_${i}`,
         rank: rs[i]!,
+        /** 占位；level01Deal.paintSuits 会按红黑规则重写 */
+        suit: 'S' as Suit,
         layer: g.layerBase + i,
         tier: g.tier,
         x: +g.x.toFixed(1),

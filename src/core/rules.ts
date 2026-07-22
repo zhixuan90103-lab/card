@@ -5,6 +5,7 @@ import {
   unionRects,
 } from './geometry';
 import type { Card, CardId, GameState, Rank, Rect } from './types';
+import { canMatchCards, matchKeyOf } from './types';
 
 export function getCard(state: GameState, id: CardId): Card | undefined {
   return state.cards[id];
@@ -198,15 +199,96 @@ export function reclaimUnusedDeck(state: GameState): void {
   state.waste = [];
 }
 
+/**
+ * 残局收库：桌上已不再需要的同色同点，从 stock/waste 成对回收。
+ * 例：桌只剩 1 张 4♥ 时，库里成对的 6♠ 等工具牌撤掉，避免「桌 1 张、库还剩一摞」。
+ * 桌上每个 key 保留最少伙伴数 = boardCount % 2（保证全局偶数可收尾）。
+ */
+export function trimSurplusDeck(state: GameState): void {
+  if (state.status === 'won') return;
+  if (puzzleAlive(state).length === 0) {
+    reclaimUnusedDeck(state);
+    return;
+  }
+
+  const boardCount = new Map<string, number>();
+  for (const c of puzzleAlive(state)) {
+    const k = matchKeyOf(c);
+    if (!k) continue;
+    boardCount.set(k, (boardCount.get(k) ?? 0) + 1);
+  }
+
+  const deckByKey = new Map<string, CardId[]>();
+  for (const id of [...state.stock, ...state.waste]) {
+    const c = state.cards[id];
+    if (!c?.alive) continue;
+    const k = matchKeyOf(c);
+    if (!k) continue;
+    if (!deckByKey.has(k)) deckByKey.set(k, []);
+    deckByKey.get(k)!.push(id);
+  }
+
+  const toKill = new Set<CardId>();
+
+  for (const [k, ids] of deckByKey) {
+    const b = boardCount.get(k) ?? 0;
+    const d = ids.length;
+    // 桌上能自相配对，多余 singles 需要库里最少 b%2 张
+    const needKeep = b % 2;
+    if (d <= needKeep) continue;
+    let removeN = d - needKeep;
+    // 只成对移除，保持该 key 总偶数（b+d 本应偶数 → removeN 偶数）
+    if (removeN % 2 === 1) removeN -= 1;
+    if (removeN <= 0) continue;
+
+    // 优先回收：waste 底层 → stock 尾部（后抽的）；尽量保留 waste 顶若它是 needKeep
+    const wasteTop =
+      state.waste.length > 0 ? state.waste[state.waste.length - 1]! : null;
+    const ordered = [...ids].sort((a, bId) => {
+      const aWaste = state.waste.indexOf(a);
+      const bWaste = state.waste.indexOf(bId);
+      const aStock = state.stock.indexOf(a);
+      const bStock = state.stock.indexOf(bId);
+      // waste 非顶优先杀
+      if (a === wasteTop && needKeep > 0) return 1;
+      if (bId === wasteTop && needKeep > 0) return -1;
+      if (aWaste >= 0 && bWaste >= 0) return aWaste - bWaste; // 底层先
+      if (aWaste >= 0) return -1;
+      if (bWaste >= 0) return 1;
+      // stock：index 大的后抽，先杀后抽的
+      return bStock - aStock;
+    });
+
+    for (let i = 0; i < removeN; i++) {
+      const id = ordered[i];
+      if (id) toKill.add(id);
+    }
+  }
+
+  if (toKill.size === 0) return;
+
+  for (const id of toKill) {
+    const c = state.cards[id];
+    if (c) c.alive = false;
+  }
+  state.stock = state.stock.filter((id) => !toKill.has(id));
+  state.waste = state.waste.filter((id) => !toKill.has(id));
+}
+
+/** 场上 free 是否存在可消对（同点同色） */
 export function hasImmediatePair(state: GameState): boolean {
-  const ranks = new Map<Rank, number>();
+  const keys = new Map<string, number>();
   for (const id of freeCardIds(state)) {
     const c = state.cards[id];
     if (!c) continue;
-    ranks.set(c.rank, (ranks.get(c.rank) ?? 0) + 1);
+    const k = matchKeyOf(c);
+    if (!k) continue;
+    keys.set(k, (keys.get(k) ?? 0) + 1);
   }
-  for (const n of ranks.values()) {
+  for (const n of keys.values()) {
     if (n >= 2) return true;
   }
   return false;
 }
+
+export { canMatchCards, matchKeyOf };
