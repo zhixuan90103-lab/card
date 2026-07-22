@@ -1,7 +1,7 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import type { Card, CardId, GameState } from '../core/types';
 import { isFree } from '../core/rules';
-import { STOCK_STACK_MAX_VISIBLE } from '../data/layout';
+import { CARD_H, CARD_W, STOCK_STACK_MAX_VISIBLE } from '../data/layout';
 import { getCardShadowParams } from '../data/cardShadowRuntime';
 import {
   getStockRect,
@@ -32,6 +32,14 @@ export class CardRenderer {
   readonly root = new Container();
   private views = new Map<CardId, CardView>();
   private animating = new Set<CardId>();
+  /** Active drag: design-space top-left of card */
+  private dragPos = new Map<CardId, { x: number; y: number }>();
+  /**
+   * Permanent drop-shadows under stock / waste seats.
+   * Always painted — stay when piles empty or cards fly away.
+   */
+  private stockSeatShadow = new Graphics();
+  private wasteSeatShadow = new Graphics();
   /** Empty stock / waste placeholders (same size as a card) */
   private stockSlot = new Graphics();
   private wasteSlot = new Graphics();
@@ -39,11 +47,21 @@ export class CardRenderer {
   constructor() {
     this.root.label = 'cards';
     this.root.sortableChildren = true;
+    this.stockSeatShadow.eventMode = 'none';
+    this.wasteSeatShadow.eventMode = 'none';
     this.stockSlot.eventMode = 'none';
     this.wasteSlot.eventMode = 'none';
+    // Shadows under ghost plates; cards sit above (z≥50)
+    this.stockSeatShadow.zIndex = 3;
+    this.wasteSeatShadow.zIndex = 3;
     this.stockSlot.zIndex = 5;
     this.wasteSlot.zIndex = 5;
-    this.root.addChild(this.stockSlot, this.wasteSlot);
+    this.root.addChild(
+      this.stockSeatShadow,
+      this.wasteSeatShadow,
+      this.stockSlot,
+      this.wasteSlot,
+    );
   }
 
   /** Call after `loadCardFaceAssets()`. */
@@ -62,7 +80,8 @@ export class CardRenderer {
   }
 
   /**
-   * Ghost frame when pile is empty — same size as a card, soft shadow plate.
+   * Ghost frame when pile is empty — same size as a card (no own shadow;
+   * seat shadows are painted separately and always stay).
    */
   private paintEmptySlot(g: Graphics, x: number, y: number, w: number, h: number): void {
     g.clear();
@@ -71,7 +90,7 @@ export class CardRenderer {
     // Soft fill plate
     g.roundRect(x, y, w, h, RADIUS);
     g.fill({ color: 0x2c3540, alpha: 0.1 });
-    // Dashed-feel rim (solid soft stroke)
+    // Soft rim
     g.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, RADIUS - 0.5);
     g.stroke({
       width: 1.5,
@@ -86,7 +105,43 @@ export class CardRenderer {
     g.visible = false;
   }
 
+  /** Permanent seat shadows for stock + waste (same params as card shadow). */
+  private paintSeatShadow(g: Graphics, x: number, y: number, w: number, h: number): void {
+    g.clear();
+    g.visible = true;
+    const { offsetX, offsetY, scale, alpha } = getCardShadowParams();
+    const sw = w * scale;
+    const sh = h * scale;
+    const sx = x + (w - sw) / 2 + offsetX;
+    const sy = y + (h - sh) / 2 + offsetY;
+    const r = RADIUS * scale;
+    g.roundRect(sx, sy, sw, sh, r);
+    g.fill({ color: 0x2c3540, alpha });
+  }
+
+  private syncPileSeatShadows(): void {
+    const stock = getStockRect();
+    const waste = getWasteRect();
+    this.paintSeatShadow(
+      this.stockSeatShadow,
+      stock.x,
+      stock.y,
+      stock.w,
+      stock.h,
+    );
+    this.paintSeatShadow(
+      this.wasteSeatShadow,
+      waste.x,
+      waste.y,
+      waste.w,
+      waste.h,
+    );
+  }
+
   private syncEmptySlots(state: GameState): void {
+    // Seat shadows first — always on for stock + waste
+    this.syncPileSeatShadows();
+
     const stock = getStockRect();
     const waste = getWasteRect();
 
@@ -217,8 +272,14 @@ export class CardRenderer {
     w: number,
     h: number,
     selected: boolean,
+    opts?: { shadow?: boolean },
   ): void {
-    this.paintShadow(view.shadow, w, h);
+    // Stock/waste seats own a permanent shadow; skip duplicate when seated
+    if (opts?.shadow === false) {
+      view.shadow.clear();
+    } else {
+      this.paintShadow(view.shadow, w, h);
+    }
     view.back.visible = false;
     view.face.visible = true;
     view.face.texture = getFaceTexture(card.suit, card.rank);
@@ -227,8 +288,17 @@ export class CardRenderer {
     this.paintFrame(view.frame, w, h, selected, true);
   }
 
-  private showBack(view: CardView, w: number, h: number): void {
-    this.paintShadow(view.shadow, w, h);
+  private showBack(
+    view: CardView,
+    w: number,
+    h: number,
+    opts?: { shadow?: boolean },
+  ): void {
+    if (opts?.shadow === false) {
+      view.shadow.clear();
+    } else {
+      this.paintShadow(view.shadow, w, h);
+    }
     view.face.visible = false;
     view.back.visible = true;
     view.back.texture = getBackTexture();
@@ -236,6 +306,102 @@ export class CardRenderer {
     this.setMask(view, w, h);
     // No extra frame on back — art already has light border
     view.frame.clear();
+  }
+
+  /** Home (layout) top-left for a card after last sync, or from state. */
+  getHomePosition(
+    state: GameState,
+    id: CardId,
+  ): { x: number; y: number; w: number; h: number } | null {
+    const card = state.cards[id];
+    if (!card || !card.alive) return null;
+    if (card.zone === 'stock') {
+      const idx = state.stock.indexOf(id);
+      if (idx < 0 || idx >= STOCK_STACK_MAX_VISIBLE) return null;
+      const stock = getStockRect();
+      const off = stockStackOffset(idx);
+      return {
+        x: stock.x + off.x,
+        y: stock.y + off.y,
+        w: stock.w,
+        h: stock.h,
+      };
+    }
+    if (card.zone === 'waste') {
+      const waste = getWasteRect();
+      const top = state.waste[state.waste.length - 1];
+      if (id !== top) return null;
+      return { x: waste.x, y: waste.y, w: waste.w, h: waste.h };
+    }
+    return {
+      x: card.rect.x,
+      y: card.rect.y,
+      w: card.rect.w,
+      h: card.rect.h,
+    };
+  }
+
+  setDragPosition(id: CardId, x: number, y: number): void {
+    this.dragPos.set(id, { x, y });
+    const view = this.views.get(id);
+    if (!view) return;
+    view.root.x = x;
+    view.root.y = y;
+    view.root.zIndex = 5000;
+    view.root.alpha = 1;
+    view.root.scale.set(1.04);
+    // Card carries its own shadow while dragged; pile seat shadow stays put
+    this.paintShadow(view.shadow, CARD_W, CARD_H);
+  }
+
+  clearDrag(id: CardId): void {
+    this.dragPos.delete(id);
+  }
+
+  isDragging(id?: CardId): boolean {
+    if (id != null) return this.dragPos.has(id);
+    return this.dragPos.size > 0;
+  }
+
+  /**
+   * Animate card back to home layout position, then clear drag.
+   */
+  snapBack(
+    id: CardId,
+    home: { x: number; y: number },
+    onDone: () => void,
+    ticker: {
+      add: (fn: (t: { deltaMS: number }) => void) => void;
+      remove: (fn: (t: { deltaMS: number }) => void) => void;
+    },
+  ): void {
+    const view = this.views.get(id);
+    if (!view) {
+      this.dragPos.delete(id);
+      onDone();
+      return;
+    }
+    this.animating.add(id);
+    const startX = view.root.x;
+    const startY = view.root.y;
+    let t = 0;
+    const duration = 180;
+    const tick = (arg: { deltaMS: number }) => {
+      t += arg.deltaMS;
+      const u = Math.min(1, t / duration);
+      const ease = 1 - (1 - u) * (1 - u);
+      view.root.x = startX + (home.x - startX) * ease;
+      view.root.y = startY + (home.y - startY) * ease;
+      view.root.scale.set(1.04 - 0.04 * ease);
+      if (u >= 1) {
+        ticker.remove(tick);
+        this.animating.delete(id);
+        this.dragPos.delete(id);
+        view.root.scale.set(1);
+        onDone();
+      }
+    };
+    ticker.add(tick);
   }
 
   sync(state: GameState, skipIds: Iterable<CardId> = []): void {
@@ -267,23 +433,37 @@ export class CardRenderer {
         const stock = getStockRect();
         const off = stockStackOffset(idx);
         view.root.visible = true;
-        view.root.x = stock.x + off.x;
         view.baseY = stock.y + off.y;
-        view.root.y = view.baseY;
-        view.root.zIndex = 50 + (n - idx);
+        const drag = this.dragPos.get(id);
+        if (drag) {
+          view.root.x = drag.x;
+          view.root.y = drag.y;
+          view.root.zIndex = 5000;
+          view.root.scale.set(1.04);
+        } else {
+          view.root.x = stock.x + off.x;
+          view.root.y = view.baseY;
+          view.root.zIndex = 50 + (n - idx);
+          view.root.scale.set(1);
+        }
         view.root.alpha = 1;
-        view.root.scale.set(1);
 
+        // Seat shadow is permanent under stock; only drag needs per-card shadow
+        const pileShadow = !!drag;
         const free = isFree(state, id);
         if (free && idx === 0) {
-          const selected = state.selectedId === id;
-          this.showFace(view, card, stock.w, stock.h, selected);
-          if (selected) {
+          const selected = state.selectedId === id && !drag;
+          this.showFace(view, card, stock.w, stock.h, selected, {
+            shadow: pileShadow,
+          });
+          if (selected && !drag) {
             view.root.y = view.baseY - 4;
             view.root.zIndex = 2000;
           }
+        } else if (!drag) {
+          this.showBack(view, stock.w, stock.h, { shadow: false });
         } else {
-          this.showBack(view, stock.w, stock.h);
+          this.showFace(view, card, stock.w, stock.h, false, { shadow: true });
         }
         continue;
       }
@@ -294,16 +474,27 @@ export class CardRenderer {
         const idx = state.waste.indexOf(id);
         view.root.visible = id === top;
         if (id !== top) continue;
-        view.root.x = waste.x;
         view.baseY = waste.y;
-        view.root.y = view.baseY;
-        view.root.zIndex = 500 + idx;
+        const drag = this.dragPos.get(id);
+        if (drag) {
+          view.root.x = drag.x;
+          view.root.y = drag.y;
+          view.root.zIndex = 5000;
+          view.root.scale.set(1.04);
+        } else {
+          view.root.x = waste.x;
+          view.root.y = view.baseY;
+          view.root.zIndex = 500 + idx;
+          view.root.scale.set(1);
+        }
         view.root.alpha = 1;
-        view.root.scale.set(1);
         const free = isFree(state, id);
-        const selected = free && state.selectedId === id;
-        this.showFace(view, card, waste.w, waste.h, selected);
-        if (selected) {
+        const selected = free && state.selectedId === id && !drag;
+        // Permanent waste seat shadow; card shadow only while dragging
+        this.showFace(view, card, waste.w, waste.h, selected, {
+          shadow: !!drag,
+        });
+        if (selected && !drag) {
           view.root.y = view.baseY - 4;
           view.root.zIndex = 2000;
         }
@@ -314,15 +505,23 @@ export class CardRenderer {
       const free = isFree(state, id);
       const selected = free && state.selectedId === id;
       view.root.visible = true;
-      view.root.x = card.rect.x;
       view.baseY = card.rect.y;
-      view.root.y = selected ? view.baseY - 4 : view.baseY;
-      view.root.zIndex = selected ? 1000 + card.layer * 10 : card.layer * 10;
+      const drag = this.dragPos.get(id);
+      if (drag) {
+        view.root.x = drag.x;
+        view.root.y = drag.y;
+        view.root.zIndex = 5000;
+        view.root.scale.set(1.04);
+      } else {
+        view.root.x = card.rect.x;
+        view.root.y = selected ? view.baseY - 4 : view.baseY;
+        view.root.zIndex = selected ? 1000 + card.layer * 10 : card.layer * 10;
+        view.root.scale.set(1);
+      }
       view.root.alpha = 1;
-      view.root.scale.set(1);
 
-      if (free) {
-        this.showFace(view, card, card.rect.w, card.rect.h, selected);
+      if (free || drag) {
+        this.showFace(view, card, card.rect.w, card.rect.h, selected && !drag);
       } else {
         this.showBack(view, card.rect.w, card.rect.h);
       }
@@ -372,6 +571,6 @@ export class CardRenderer {
   }
 
   isBusy(): boolean {
-    return this.animating.size > 0;
+    return this.animating.size > 0 || this.dragPos.size > 0;
   }
 }

@@ -45,15 +45,19 @@ R5   iPhone 15 · 11 §6 · 假设定稿列
 export const ANIM = {
   selectMs: 80,
   matchMs: 280,      // H-match；A/B 试 240
+  snapMs: 180,       // A-snap；A/B 140（handfeel B′）
+  dragScale: 1.04,   // A-drag-scale
   flipMs: 160,       // H-flip
   drawMs: 0,         // H-draw
   selectLiftY: 4,    // H-sel；无 scale
+  dragThresholdDesignPx: 8,
   selectStroke: 0xf0c14a,
   faceRed: 0xb71c1c, // H-red；可回退 0xc0392b
   faceBlack: 0x1a1a1a,
   faceFill: 0xf5f0e6,
   backFill: 0x1e3a5f,
 } as const;
+// busy = flyAway ∪ snapBack ∪ 拖中；flip 不锁 — art-ux/03 v1.2 · 08
 ```
 
 ---

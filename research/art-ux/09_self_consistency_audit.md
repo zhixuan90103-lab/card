@@ -68,7 +68,7 @@ handfeel/00、旧 changelog 文案：仅祖先，不覆盖 03/08
 | **剂量** | 常用薄 / 清桌略厚；X04 无默认震屏 |
 | **假设制** | ms 非真理；停外搜；R4 A/B |
 | **几何门禁** | 改 CARD 先改 `05`（X08） |
-| **busy 边界** | 仅 match；翻面不锁（W06） |
+| **busy 边界** | flyAway ∪ snap ∪ 拖中；翻面不锁（handfeel B′ / 08 H-busy） |
 
 ---
 

@@ -219,17 +219,7 @@ export class GameSession {
     }
 
     if (canMatchCards(first, card)) {
-      this.removePair(next, first.id, id);
-      next.selectedId = null;
-      if (puzzleAlive(next).length === 0) {
-        // 清桌即胜：未用完的抽牌区一并回收，不做「库内收尾配对」
-        reclaimUnusedDeck(next);
-      } else {
-        // 桌上已不需要的库牌成对回收，避免「桌剩 1 张、库还一摞」
-        trimSurplusDeck(next);
-        // 抽出叠被消空时自动再翻一张（与本步同一 commit，撤销一并回退）
-        this.ensureWasteHasCard(next);
-      }
+      this.applyMatch(next, first.id, id);
       this.commit(next);
       return { matched: true, cancelled: false, reselected: false };
     }
@@ -238,6 +228,49 @@ export class GameSession {
     next.selectedId = id;
     this.commit(next);
     return { matched: false, cancelled: false, reselected: true };
+  }
+
+  /**
+   * Drag-drop / explicit pair match. One history step.
+   * Both cards must be free and match (same rank+suit).
+   */
+  tryMatchPair(
+    a: CardId,
+    b: CardId,
+  ): { matched: boolean } {
+    if (this.state.status === 'won' || a === b) {
+      return { matched: false };
+    }
+    const ca = this.state.cards[a];
+    const cb = this.state.cards[b];
+    if (
+      !ca ||
+      !cb ||
+      !ca.alive ||
+      !cb.alive ||
+      !isFree(this.state, a) ||
+      !isFree(this.state, b) ||
+      !canMatchCards(ca, cb)
+    ) {
+      return { matched: false };
+    }
+
+    this.pushHistory();
+    const next = cloneState(this.state);
+    this.applyMatch(next, a, b);
+    this.commit(next);
+    return { matched: true };
+  }
+
+  private applyMatch(state: GameState, a: CardId, b: CardId): void {
+    this.removePair(state, a, b);
+    state.selectedId = null;
+    if (puzzleAlive(state).length === 0) {
+      reclaimUnusedDeck(state);
+    } else {
+      trimSurplusDeck(state);
+      this.ensureWasteHasCard(state);
+    }
   }
 
   private removePair(state: GameState, a: CardId, b: CardId): void {

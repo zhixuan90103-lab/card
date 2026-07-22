@@ -22,9 +22,13 @@
 | D10 / D10b / D26 | 清桌胜；库=工具；清桌回收；残局 trim 多余库牌 |
 | D12 | **无默认 timer** |
 | D19–D25 | 禁平行剥；精简 stock；单关无限；红黑配对；难度档；钥匙稀缺 2–4；库钥匙靠前 |
-
-**Level01 总整理：** `docs/changelog/2026-07-22_full_roundup.md`
+| **D27 / D27b** | **公平钥匙** + **Near-miss 发局偏好**（稀缺优先 3～4、前半进度） | `d27_fair_keys` · `near_miss_p0` |
 | **D15** | 主渲染 **PixiJS 8.19.x** 单引擎；HUD 用 **DOM** |
+
+**Level01 总整理：** `docs/changelog/2026-07-22_full_roundup.md`  
+**操作/表现：** `docs/changelog/2026-07-22_drag_match_pile_shadow.md`  
+**钥匙/可解：** `docs/changelog/2026-07-22_d27_fair_keys.md`  
+**差一点体感：** `docs/changelog/2026-07-22_near_miss_p0.md`
 | **D16** | 设计分辨率 **393×852**；PC **phone-frame letterbox** |
 | **D17** | 可点集 = **逻辑 isFree + AABB**（引擎不单独决定合法性） |
 

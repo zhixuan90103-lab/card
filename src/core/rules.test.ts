@@ -87,6 +87,15 @@ describe('isFree / pickCard', () => {
     const state = createStateFromLevel(miniLevel);
     expect(pickCard(state, { x: 400, y: 400 })).toBeNull();
   });
+
+  it('pickCard excludeId skips that free card', () => {
+    const state = createStateFromLevel(miniLevel);
+    // t1 covers b1; only t1 free at (50,50)
+    expect(pickCard(state, { x: 50, y: 50 })).toBe('t1');
+    expect(pickCard(state, { x: 50, y: 50 }, { excludeId: 't1' })).toBeNull();
+    // b2 alone free
+    expect(pickCard(state, { x: 170, y: 50 }, { excludeId: 'b2' })).toBeNull();
+  });
 });
 
 describe('selection / match / win', () => {
@@ -134,6 +143,40 @@ describe('selection / match / win', () => {
     expect(session.tapCard('b5').matched).toBe(false);
     expect(session.getState().cards['r5']!.alive).toBe(true);
     expect(session.getState().cards['b5']!.alive).toBe(true);
+  });
+
+  it('tryMatchPair removes matching free pair without prior selection', () => {
+    const level: Level = {
+      id: 'drag-pair',
+      cards: [
+        { id: 'a1', rank: 'A', suit: 'H', layer: 0, x: 0, y: 0, w: 50, h: 50 },
+        { id: 'a2', rank: 'A', suit: 'H', layer: 0, x: 60, y: 0, w: 50, h: 50 },
+        { id: 'k1', rank: 'K', suit: 'S', layer: 0, x: 120, y: 0, w: 50, h: 50 },
+      ],
+      stock: [],
+    };
+    const session = new GameSession(level);
+    expect(session.tryMatchPair('a1', 'a2').matched).toBe(true);
+    expect(session.getState().cards['a1']!.alive).toBe(false);
+    expect(session.getState().cards['a2']!.alive).toBe(false);
+    expect(session.getState().selectedId).toBeNull();
+  });
+
+  it('tryMatchPair rejects different rank/suit or same id', () => {
+    const level: Level = {
+      id: 'drag-reject',
+      cards: [
+        { id: 'a1', rank: 'A', suit: 'H', layer: 0, x: 0, y: 0, w: 50, h: 50 },
+        { id: 'a2', rank: 'A', suit: 'S', layer: 0, x: 60, y: 0, w: 50, h: 50 },
+        { id: 'k1', rank: 'K', suit: 'H', layer: 0, x: 120, y: 0, w: 50, h: 50 },
+      ],
+      stock: [],
+    };
+    const session = new GameSession(level);
+    expect(session.tryMatchPair('a1', 'a1').matched).toBe(false);
+    expect(session.tryMatchPair('a1', 'a2').matched).toBe(false); // different suit
+    expect(session.tryMatchPair('a1', 'k1').matched).toBe(false); // different rank
+    expect(session.getState().cards['a1']!.alive).toBe(true);
   });
 
   it('trims surplus stock when board no longer needs those ranks', () => {

@@ -81,7 +81,7 @@
 | Q-C3 | 选中组合 | **已拍板** | 描边+y-4；无 scale |
 | Q-C4 | 抽牌飞入 | **已拍板** | H-draw=瞬时 |
 | Q-D1 | 非法反馈 | **已拍板** | E04 改选；E05 静默 |
-| Q-D2 | busy | **弱–中·H-busy** | 仅 match 锁；R4 验 |
+| Q-D2 | busy | **中·H-busy** | match∪snap∪拖；R4/C 验 |
 | Q-D3 | 真机 | **未验证** | **R5** · `11` §6 |
 | Q-D4 | 音/触 | **后置** | P2 |
 
@@ -146,8 +146,10 @@ R5  真机收口      ⬜ 11 §6 · 定稿列
 |----|------|----------|--------|---|---------|
 | E01 | 选中 free | ≤100ms | 否 | P0 | 金边+y-4 |
 | E02 | 取消 | ≤100ms | 否 | P0 | |
-| E03 | 合法消 | **H-match 280** | **busy** | P0 | flyAway |
+| E03a/b | 点消/拖消 | **H-match 280** | **busy** | P0 | 同 flyAway（细表 03 v1.2） |
 | E04 | 非法改选 | ≤100ms | 否 | P0 | 无 nudge |
+| E04b | 拖失败弹回 | A-snap 180 | 短锁 | P0 | snapBack |
+| E-drag | 拖起跟手 | 跟手 | 拖中 busy | P0 | scale 1.04 |
 | E05 | 点非 free | — | 否 | **P0=静默** | tip=P1 关 |
 | E06 | 新 free 翻 | **H-flip 160** | **否** | P0 | `08` S1–S3 |
 | E07 | 抽牌 | 瞬时 | 否 | P1 | H-draw |
@@ -157,7 +159,7 @@ R5  真机收口      ⬜ 11 §6 · 定稿列
 | E11 | 硬死浮层 | 立刻 CTA | 遮罩 | P1 | 「暂时卡住了」 |
 | E12 | 胜利浮层 | ≤1s 可点 | 遮罩 | P1 | |
 
-剂量：E03/E12 略厚；E01/E04/E05 薄；**默认无震屏**。
+剂量：E03a/b·E12 略厚；E01/E04/E05 薄；E04b 轨迹中；**默认无震屏**。细表以 `art-ux/03` v1.2 为准。
 
 ---
 
@@ -171,7 +173,7 @@ R5  真机收口      ⬜ 11 §6 · 定稿列
 | H-red | `0xb71c1c` | R4/R5；可回退 |
 | H-corner | 双角标字号 12 | R4 |
 | H-free | 仅亮面=free，无 glow | R4 5s 扫 |
-| H-busy | 仅 match 全锁 | R4 连点 |
+| H-busy | flyAway ∪ snapBack ∪ 拖中；flip 不锁 | R4 连点；见 08 B′ |
 | H-draw | 抽瞬时 | 默认 |
 | H-label | 保留区标签 | 默认 |
 
@@ -186,7 +188,7 @@ research/art-ux/
   00_INDEX.md
   01_baseline_notes.md      # R0（录屏债注明）
   02_visual_spec.md         # v0.1
-  03_ue_event_table.md      # v1.1
+  03_ue_event_table.md      # v1.2（拖放合流）
   04_animation_params.md    # v0.1
   05_antipatterns.md
   06_synthesis.md           # v2

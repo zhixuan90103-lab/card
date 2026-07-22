@@ -13,9 +13,15 @@ import { generateLayout, materializeCards, type GeoGroup } from './levelLayout';
 import { paintSuitsOnLevel } from './suitPaint';
 import {
   enforceLockKeyScarcity,
+  KEY_SCARCITY_HARD_HI,
+  KEY_SCARCITY_HARD_LO,
+  KEY_SCARCITY_HI,
+  KEY_SCARCITY_LO,
   passClearGreedy,
+  passEarlyProgress,
   passKeyOnBoard,
   passKeyScarcity,
+  passNoCrossLockKeyBurial,
 } from './pathLockMetrics';
 
 /**
@@ -71,7 +77,8 @@ function accessPairCap(diff: DealDifficulty): number {
   return diff === 'extreme' ? 0 : 1;
 }
 
-function dealOnce(
+/** @internal exported for diagnostics / tests */
+export function dealOnce(
   seed: number,
   difficulty: DealDifficulty = 'hard',
 ): { level: Level; meta: Level01DealMeta } | null {
@@ -183,11 +190,20 @@ function dealOnce(
     setTop(lockGroups[i]!, lockRanks[i]!);
   }
 
-  if (topology === 'chain' && lockCount >= 2) {
-    for (let i = 1; i < lockCount; i++) {
-      const prev = lockGroups[i - 1]!;
-      setIdx(prev, 1, lockRanks[i]!);
-      keyIds.push(`${prev.key}_1`);
+  /**
+   * D27 钥匙几何（禁止跨锁埋钥）：
+   * - 禁止：锁 A 堆内放锁 B 的钥匙（旧 chain 写法）
+   * - 允许：每把锁的钥匙放在 **独立可挖位**（非锁 L1 mid / 桌面链）
+   * - chain 仅表示「多锁串联节奏 / 多锁并立」，**不再**用埋钥表达顺序
+   * - 玩家把两把钥匙互消 → 可归因误用（难度保留）
+   */
+  const freeL1 = l1Shuf.filter((g) => !lockGroups.includes(g));
+  // 每把锁一枚桌面钥匙在独立 mid（C/D 位）；额外钥由 L2 dig 链 / stock / enforce 补
+  for (let i = 0; i < lockCount && i < freeL1.length; i++) {
+    const g = freeL1[i]!;
+    if (g.size >= 2) {
+      setIdx(g, 1, lockRanks[i]!);
+      keyIds.push(`${g.key}_1`);
     }
   }
 
@@ -210,25 +226,17 @@ function dealOnce(
   // 锁点备 1 张进库即可（钥匙主要在桌面）
   if (lockCount > 0) l1NeedStock.push(lockRanks[0]!);
 
-  // independent 额外钥匙位：非锁 L1 的 mid 放锁点（可挖到），不放顶以免桌面成对
-  if (topology === 'independent' && lockCount >= 1) {
-    const freeL1 = l1Shuf.filter((g) => !lockGroups.includes(g));
-    for (let i = 0; i < lockCount && i < freeL1.length; i++) {
-      const g = freeL1[i]!;
-      // mid = 钥匙备份（同锁点）
-      if (g.size >= 2) {
-        setIdx(g, 1, lockRanks[i]!);
-        keyIds.push(`${g.key}_1`);
-      }
-    }
-  }
-
   // 填满剩余 null：自上而下，这样填次顶时组顶已就绪，可禁平行叠
+  // D27：锁堆非顶位禁止再塞任何「锁点」（含本锁钥匙与他锁钥匙）——钥匙只在独立位
+  const lockRankSet = new Set(lockRanks);
+  const lockGroupKeys = new Set(lockGroups.map((g) => g.key));
+
   for (const g of groups) {
     const arr = ranks.get(g.key)!;
     if (arr.every((x) => x != null)) continue;
 
     const used = new Set(arr.filter((x): x is Rank => x != null));
+    const isLockGroup = lockGroupKeys.has(g.key);
     for (let i = g.size - 1; i >= 0; i--) {
       if (arr[i] != null) {
         used.add(arr[i] as Rank);
@@ -243,6 +251,13 @@ function dealOnce(
         g.key,
         myTop,
       );
+      // D27：锁堆内禁止出现 **其他锁** 的点（可与本锁同点填缝，由上色/稀缺再调）
+      if (isLockGroup) {
+        const myTopRank = arr[g.size - 1] as Rank | null;
+        for (const lr of lockRankSet) {
+          if (lr !== myTopRank) banned.add(lr);
+        }
+      }
       let r = take();
       let guard = 0;
       while ((used.has(r) || banned.has(r)) && guard++ < 80) r = take();
@@ -308,15 +323,15 @@ function dealOnce(
   }
 
   const painted = paintSuitsOnLevel(cards, stock, forcedColor, rand);
-  // H1：每把锁的同色同点全场 2～4 张（路径锁稀缺）
+  // H1：稀缺硬门槛 2～4；发局循环再优先 3～4（near-miss）
   const enforced = enforceLockKeyScarcity(
     painted.cards,
     painted.stock,
     lockIds,
     forcedColor,
     rand,
-    2,
-    4,
+    KEY_SCARCITY_HARD_LO,
+    KEY_SCARCITY_HARD_HI,
   );
   if (!enforced.ok) return null;
   cards = enforced.cards;
@@ -655,35 +670,96 @@ export function dealLevel01(
   maxAttempts = 40,
   difficulty: DealDifficulty = 'hard',
 ): { level: Level; meta: Level01DealMeta } {
-  /** 密度已过、可清未过的最后一局（extreme 兜底；hard 尽量不用） */
-  let densityOk: { level: Level; meta: Level01DealMeta } | null = null;
+  /**
+   * H1b + D27 + near-miss P0（轻量）：
+   * 1) 先找可清局（快路径，同旧逻辑）
+   * 2) 理想形（稀缺3～4 + 前半进度）立刻返回
+   * 3) 否则在找到首个可清后再多搜 polishN 局，取更高分
+   * hard 禁止不可清 density；extreme 最后才密度兜底
+   */
+  type Cand = { level: Level; meta: Level01DealMeta };
+  let densityOk: Cand | null = null;
+  let best: { score: number; dealt: Cand } | null = null;
+  let foundClear = false;
+  let polishLeft = 0;
+  const polishN = 12; // 找到可清后再优选的尝试数（控制耗时）
 
-  for (let a = 0; a < maxAttempts; a++) {
+  const hardExtra = 40;
+  const extremeExtra = 40;
+  const totalAttempts =
+    difficulty === 'hard' ? maxAttempts + hardExtra : maxAttempts + extremeExtra;
+
+  const baseOk = (dealt: Cand): boolean => {
+    if (!passNoCrossLockKeyBurial(dealt.level, dealt.meta)) return false;
+    if (
+      !passKeyScarcity(
+        dealt.level,
+        dealt.meta,
+        KEY_SCARCITY_HARD_LO,
+        KEY_SCARCITY_HARD_HI,
+      )
+    ) {
+      return false;
+    }
+    const minBoard = difficulty === 'extreme' ? 0.75 : 0.65;
+    return passKeyOnBoard(dealt.level, dealt.meta, minBoard);
+  };
+
+  const scoreClearable = (dealt: Cand, s: number): number => {
+    const preferScarce = passKeyScarcity(
+      dealt.level,
+      dealt.meta,
+      KEY_SCARCITY_LO,
+      KEY_SCARCITY_HI,
+    );
+    const early = passEarlyProgress(dealt.level, s);
+    if (preferScarce && early) return 4;
+    if (preferScarce) return 3;
+    if (early) return 2;
+    return 1;
+  };
+
+  for (let a = 0; a < totalAttempts; a++) {
     const s = (seed + a * 9973) >>> 0;
     const dealt = dealOnce(s, difficulty);
     if (!dealt) continue;
-    if (!passKeyScarcity(dealt.level, dealt.meta, 2, 4)) continue;
-    const minBoard = difficulty === 'extreme' ? 0.75 : 0.65;
-    if (!passKeyOnBoard(dealt.level, dealt.meta, minBoard)) continue;
+    if (!baseOk(dealt)) continue;
     densityOk = dealt;
-    if (passClearGreedy(dealt.level, s)) return dealt;
-  }
 
-  // H1b：hard 禁止「不可清也发」——继续扩 attempt
-  if (difficulty === 'hard') {
-    for (let a = maxAttempts; a < maxAttempts + 40; a++) {
-      const s = (seed + a * 9973) >>> 0;
-      const dealt = dealOnce(s, difficulty);
-      if (!dealt) continue;
-      if (!passKeyScarcity(dealt.level, dealt.meta, 2, 4)) continue;
-      if (!passKeyOnBoard(dealt.level, dealt.meta, 0.65)) continue;
-      densityOk = dealt;
-      if (passClearGreedy(dealt.level, s)) return dealt;
+    if (!passClearGreedy(dealt.level, s)) continue;
+
+    const sc = scoreClearable(dealt, s);
+    if (sc >= 4) return dealt; // 理想 near-miss 形
+
+    if (!best || sc > best.score) best = { score: sc, dealt };
+
+    if (!foundClear) {
+      foundClear = true;
+      polishLeft = polishN;
+    } else {
+      polishLeft -= 1;
+      if (polishLeft <= 0 && best) return best.dealt;
     }
   }
 
-  // extreme：密度合格即可兜底；hard 仅在实在找不到可清时才退回密度局（避免 throw）
-  if (densityOk) return densityOk;
+  if (best) return best.dealt;
+
+  // hard：再短搜一轮（换盐），仍只要可清
+  if (difficulty === 'hard') {
+    for (let a = 0; a < 60; a++) {
+      const s = (seed + a * 9973 + 0x9e3779b9) >>> 0;
+      const dealt = dealOnce(s, difficulty);
+      if (!dealt || !baseOk(dealt)) continue;
+      if (passClearGreedy(dealt.level, s)) return dealt;
+    }
+    throw new Error(
+      `dealLevel01: hard seed ${seed} failed to find clearable deal (D27/H1b)`,
+    );
+  }
+
+  if (densityOk && passNoCrossLockKeyBurial(densityOk.level, densityOk.meta)) {
+    return densityOk;
+  }
   throw new Error('dealLevel01: failed to generate');
 }
 

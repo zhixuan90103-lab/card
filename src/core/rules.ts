@@ -4,7 +4,7 @@ import {
   rectsOverlap,
   unionRects,
 } from './geometry';
-import type { Card, CardId, GameState, Rank, Rect } from './types';
+import type { Card, CardId, GameState, Rect } from './types';
 import { canMatchCards, matchKeyOf } from './types';
 
 export function getCard(state: GameState, id: CardId): Card | undefined {
@@ -153,9 +153,11 @@ export function freeCardIds(state: GameState): CardId[] {
 export function pickCard(
   state: GameState,
   p: { x: number; y: number },
+  opts?: { excludeId?: CardId },
 ): CardId | null {
   const candidates: Card[] = [];
   for (const id of freeCardIds(state)) {
+    if (opts?.excludeId && id === opts.excludeId) continue;
     const c = state.cards[id];
     if (!c) continue;
     const { rect } = c;

@@ -8,7 +8,15 @@ import {
 import { createStateFromLevel } from './state';
 import { freeCardIds, isFree, hasImmediatePair } from './rules';
 import { canFullyClear } from '../data/levelSolve';
-import { passKeyScarcity } from '../data/pathLockMetrics';
+import {
+  KEY_SCARCITY_HARD_HI,
+  KEY_SCARCITY_HARD_LO,
+  KEY_SCARCITY_HI,
+  KEY_SCARCITY_LO,
+  passEarlyProgress,
+  passKeyScarcity,
+  passNoCrossLockKeyBurial,
+} from '../data/pathLockMetrics';
 import { matchKey, matchKeyOf, suitColor } from './types';
 
 describe('level-01 main scheme: fixed full slots, random puzzle', () => {
@@ -47,12 +55,56 @@ describe('level-01 main scheme: fixed full slots, random puzzle', () => {
     }
   }, 60000);
 
-  it('H1: each lock match-key count is 2..4', () => {
+  it('H1: each lock match-key count is 2..4 (hard floor)', () => {
     for (const s of [1, 2, 7, 11, 42, LEVEL01_TEST_SEED]) {
       const { level, meta } = buildLevel01WithMeta(s, 'hard');
-      expect(passKeyScarcity(level, meta, 2, 4), `seed ${s}`).toBe(true);
+      expect(
+        passKeyScarcity(level, meta, KEY_SCARCITY_HARD_LO, KEY_SCARCITY_HARD_HI),
+        `seed ${s}`,
+      ).toBe(true);
     }
-  }, 120000);
+  }, 180000);
+
+  it('near-miss prefer: many seeds hit scarcity 3..4', () => {
+    let prefer = 0;
+    const seeds = [1, 2, 7, 11, 42, LEVEL01_TEST_SEED, 100, 200, 300];
+    for (const s of seeds) {
+      const { level, meta } = buildLevel01WithMeta(s, 'hard');
+      if (passKeyScarcity(level, meta, KEY_SCARCITY_LO, KEY_SCARCITY_HI)) {
+        prefer += 1;
+      }
+    }
+    // 评分优先 3～4，多数应命中（允许少数回落 2）
+    expect(prefer).toBeGreaterThanOrEqual(Math.ceil(seeds.length * 0.5));
+  }, 240000);
+
+  it('D27: no other-lock key buried under a lock stack', () => {
+    for (const s of [1, 2, 7, 11, 42, LEVEL01_TEST_SEED, 100, 999]) {
+      const { level, meta } = buildLevel01WithMeta(s, 'hard');
+      expect(passNoCrossLockKeyBurial(level, meta), `seed ${s}`).toBe(true);
+    }
+  }, 180000);
+
+  it('H1b: hard deals pass greedy clear', () => {
+    for (const s of [1, 2, 7, 11, 42, LEVEL01_TEST_SEED]) {
+      const { level, meta } = buildLevel01WithMeta(s, 'hard');
+      expect(
+        canFullyClear(level, meta.seed + 1),
+        `seed ${s} not clearable`,
+      ).toBe(true);
+    }
+  }, 180000);
+
+  it('near-miss P0: early progress or clearable fallback', () => {
+    // 优先前半有进度；若仅 clearButEarly 回落，至少仍可清
+    for (const s of [1, 2, 7, 11, 42, LEVEL01_TEST_SEED]) {
+      const { level, meta } = buildLevel01WithMeta(s, 'hard');
+      const clear = canFullyClear(level, meta.seed + 1);
+      expect(clear, `seed ${s} clear`).toBe(true);
+      // 多数 seed 应过 early；不过也不强制（deal 可放宽）
+      void passEarlyProgress(level, meta.seed);
+    }
+  }, 180000);
 
   it('stock keys for locks are not left as the last card when avoidable', () => {
     for (const s of [1, 2, 7, 11, 42, LEVEL01_TEST_SEED]) {

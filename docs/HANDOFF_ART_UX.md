@@ -56,7 +56,7 @@
 | D22 | 配对 **同点同色**；红♥ 黑♠ only |
 | D12 | **无默认 timer** |
 
-牌面尺寸已定稿（改前先改 `05`）：`CARD_W=52` `CARD_H=72`，同槽 `d=9`。
+牌面尺寸（实现）：`CARD_W=56` `CARD_H=74`（与 Poker 188×248 同比例；改前先改 `05` + `layout.ts`），同槽 `d=9`。
 
 ---
 
@@ -64,18 +64,25 @@
 
 ```text
 src/
-  render/cards.ts     # 牌精灵：矩形底 + 点数/花色字；飞走动画
+  render/cards.ts     # Poker Sprite 正/背；拖/弹回；飞走；座位常驻影
+  render/cardAssets.ts# bake PNG → texture（DPR）
+  render/pileTray.ts  # 抽牌区托盘
   render/app.ts       # Pixi 应用、resize、context lost 钩子
   ui/hud.ts           # DOM：顶栏、抽牌/撤销/重开/新局、胜/负浮层
-  styles.css          # phone-frame、letterbox
-  data/layout.ts      # STOCK/WASTE 位置、牌尺寸常量
-  main.ts             # 输入、局号/难度、会话
-  core/rules.ts       # isFree / 胜负（勿为美术改判定语义）
+  ui/trayTuner.ts     # 托盘/阴影 live 调参
+  styles.css          # phone-frame、letterbox、bg #efe5d9
+  data/layout.ts      # STOCK/WASTE、牌尺寸
+  data/pileLayoutRuntime.ts / cardShadowRuntime.ts
+  main.ts             # 点选 + 拖放输入、局号/难度、会话
+  core/rules.ts       # isFree / pickCard / 胜负（勿改判定语义）
+  public/cards/       # R_*/B_* 正面 + Card_B.png 背面
 ```
 
-**现状观感：** 占位矩形牌 + 系统字体；功能完整，**未做正式美术**。
+**现状观感：** Poker 贴图牌面 + 灰蓝皇冠背面；抽牌托盘；拖放/点选双通道。
 
 **玩法入口：** 单关无限；顶栏 `第 N 局 · 困难|极难 · 锁×k · #seed`。
+
+**近期 changelog：** `docs/changelog/2026-07-22_drag_match_pile_shadow.md`
 
 ---
 
@@ -142,24 +149,30 @@ D. 真机与无障碍点按（viewport + 11 清单）
 ## 8. 技术约束速查
 
 - 设计分辨率：**393 × 852**  
-- 牌：**52 × 72**，同组上漏边 **d=9**  
+- 牌：**56 × 74**，同组上漏边 **d=9**  
 - 渲染：**Pixi v8**；UI：**DOM #hud**  
-- 点击：`screenToDesign` → `pickCard`（isFree 过滤）  
-- 动画：表现层，**不改 GameSession 规则**；busy 时禁止输入（已有 `isBusy`）  
+- 输入：`screenToDesign` → `pickCard`（isFree）；**短按点选 / 拖放配对**  
+- 拖放：匹配 `tryMatchPair`；不匹配 `snapBack`；阈值 ~8 design px  
+- 抽牌区/抽出叠：**座位阴影常驻**（`stockSeatShadow` / `wasteSeatShadow`）  
+- 动画：表现层，**不改配对合法性**；`isBusy` = 动画中 **或** 拖拽中  
 - 构建：改资源后 `vite build` 可记一笔体积  
 
 ---
 
 ## 9. 验收清单（本窗口 Done）
 
-- [ ] 牌面红黑 / 花色扫读清晰  
-- [ ] free 亮、非 free 背、选中可辨  
-- [ ] 消牌 / 翻面有反馈，不卡逻辑  
-- [ ] 胜负浮层与软硬提示不挡操作  
+- [x] 牌面红黑 / 花色扫读清晰（Poker `R_*`/`B_*`）  
+- [x] free 亮、非 free 背、选中可辨  
+- [x] 消牌 / 翻面有反馈，不卡逻辑（点选 + 拖放）  
+- [x] 拖到同色同点消除 / 不同弹回  
+- [x] 抽牌区·抽出叠座位阴影常驻  
+- [x] 牌背 `Card_B.png` 灰蓝皇冠  
+- [ ] 胜负浮层与软硬提示不挡操作（既有，未本轮重验）  
 - [ ] phone-frame 下无裁切、无严重点偏  
 - [ ] （目标）iPhone 15 Safari 勾 `11` §6 若干关键项  
-- [ ] 未改坏：`npx vitest run` 仍绿  
-- [ ] 简短 changelog：`docs/changelog/YYYY-MM-DD_art_ux.md`  
+- [x] 未改坏：`npx vitest run` core 规则测绿  
+- [x] changelog：`docs/changelog/2026-07-22_drag_match_pile_shadow.md`  
+
 
 ---
 

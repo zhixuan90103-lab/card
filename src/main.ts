@@ -1,6 +1,7 @@
 import { GameSession, pickCard } from './core';
 import { isHardDead, isSoftStuck } from './core/stuck';
-import type { Level } from './core/types';
+import type { CardId, Level } from './core/types';
+import { canMatchCards } from './core/types';
 import { STOCK_STACK_MAX_VISIBLE } from './data/layout';
 import {
   getStockRect,
@@ -97,8 +98,16 @@ async function main(): Promise<void> {
     );
   };
 
-  const softTipText = (): string | null => {
-    if (softTipShown) return '试试撤销或重开 · 或继续抽牌洗回';
+  const softTipText = (st: ReturnType<typeof session.getState>): string | null => {
+    // 硬死局走结算浮层，不再贴软提示
+    if (isHardDead(st)) return null;
+    // 仅在仍属软卡时展示（曾触发过阈值）；有立即对则收回
+    if (softTipShown && isSoftStuck(st)) {
+      return '试试撤销或重开 · 或继续抽牌洗回';
+    }
+    if (softTipShown && !isSoftStuck(st)) {
+      softTipShown = false;
+    }
     return null;
   };
 
@@ -112,7 +121,7 @@ async function main(): Promise<void> {
       canUndo: session.canUndo(),
       levelName: formatRunTitle(run.meta, runIndex),
       teachHint: level.teachHint,
-      softTip: softTipText(),
+      softTip: softTipText(st),
       hardDead: hard,
     });
   };
@@ -166,13 +175,21 @@ async function main(): Promise<void> {
   const frame = getPhoneFrameEl();
   const canvas = app.canvas as HTMLCanvasElement;
 
-  const onPointer = (clientX: number, clientY: number) => {
-    if (cards.isBusy() || session.getState().status === 'won') return;
-    if (isHardDead(session.getState())) return;
+  const DRAG_THRESHOLD = 8; // design px before drag starts
 
-    const rect = frame.getBoundingClientRect();
-    const p = screenToDesign(clientX, clientY, rect);
+  type DragState = {
+    id: CardId;
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    grabDx: number;
+    grabDy: number;
+    home: { x: number; y: number; w: number; h: number };
+    dragging: boolean;
+  };
+  let activeDrag: DragState | null = null;
 
+  const hitStock = (p: { x: number; y: number }): boolean => {
     const stockR = getStockRect();
     const stockVis = Math.min(
       session.getState().stock.length,
@@ -181,36 +198,34 @@ async function main(): Promise<void> {
     const stockExtra = Math.max(0, stockVis - 1);
     const stockLeft = stockR.x + stockExtra * getStockStackDx();
     const stockRight = stockR.x + stockR.w;
-    if (
+    return (
       p.x >= stockLeft &&
       p.x <= stockRight &&
       p.y >= stockR.y &&
       p.y <= stockR.y + stockR.h
-    ) {
-      const stockBefore =
-        session.getState().stock.length + session.getState().waste.length;
-      const { drew } = session.draw();
-      if (drew) {
-        drawsWithoutMatch += 1;
-        const st = session.getState();
-        if (
-          isSoftStuck(st) &&
-          drawsWithoutMatch >= Math.max(3, Math.min(stockBefore, 8))
-        ) {
-          softTipShown = true;
-        }
+    );
+  };
+
+  const doDraw = () => {
+    const stockBefore =
+      session.getState().stock.length + session.getState().waste.length;
+    const { drew } = session.draw();
+    if (drew) {
+      drawsWithoutMatch += 1;
+      const st = session.getState();
+      if (
+        isSoftStuck(st) &&
+        drawsWithoutMatch >= Math.max(3, Math.min(stockBefore, 8))
+      ) {
+        softTipShown = true;
       }
-      refresh();
-      return;
     }
+    refresh();
+  };
 
-    syncPileRects(session);
-    const id = pickCard(session.getState(), p);
-    if (!id) return;
-
+  const doTapCard = (id: CardId) => {
     const selectedBefore = session.getState().selectedId;
     const result = session.tapCard(id);
-
     if (result.matched && selectedBefore) {
       drawsWithoutMatch = 0;
       softTipShown = false;
@@ -220,19 +235,151 @@ async function main(): Promise<void> {
       cards.flyAway(pair, () => refresh(), app.ticker);
       return;
     }
-
     refresh();
   };
 
-  canvas.addEventListener(
-    'pointerdown',
-    (e) => {
-      e.preventDefault();
-      onPointer(e.clientX, e.clientY);
-    },
-    { passive: false },
-  );
+  const onPointerDown = (e: PointerEvent) => {
+    if (cards.isBusy() || session.getState().status === 'won') return;
+    if (isHardDead(session.getState())) return;
+    e.preventDefault();
 
+    const rect = frame.getBoundingClientRect();
+    const p = screenToDesign(e.clientX, e.clientY, rect);
+
+    // Prefer free cards (including waste top). Stock backs are not free → fall through to draw.
+    syncPileRects(session);
+    const id = pickCard(session.getState(), p);
+    if (id) {
+      const home = cards.getHomePosition(session.getState(), id);
+      if (!home) return;
+      activeDrag = {
+        id,
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        grabDx: p.x - home.x,
+        grabDy: p.y - home.y,
+        home,
+        dragging: false,
+      };
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    if (hitStock(p)) {
+      doDraw();
+    }
+  };
+
+  const onPointerMove = (e: PointerEvent) => {
+    if (!activeDrag || e.pointerId !== activeDrag.pointerId) return;
+    e.preventDefault();
+
+    const rect = frame.getBoundingClientRect();
+    const p = screenToDesign(e.clientX, e.clientY, rect);
+
+    if (!activeDrag.dragging) {
+      const dx = e.clientX - activeDrag.startClientX;
+      const dy = e.clientY - activeDrag.startClientY;
+      // Approximate design distance via frame scale
+      const scale = rect.width / 393;
+      const distDesign = Math.hypot(dx, dy) / Math.max(scale, 1e-6);
+      if (distDesign < DRAG_THRESHOLD) return;
+      activeDrag.dragging = true;
+    }
+
+    cards.setDragPosition(
+      activeDrag.id,
+      p.x - activeDrag.grabDx,
+      p.y - activeDrag.grabDy,
+    );
+  };
+
+  const onPointerUp = (e: PointerEvent) => {
+    if (!activeDrag || e.pointerId !== activeDrag.pointerId) return;
+    e.preventDefault();
+    const drag = activeDrag;
+    activeDrag = null;
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+
+    const rect = frame.getBoundingClientRect();
+    const p = screenToDesign(e.clientX, e.clientY, rect);
+
+    // Tap (no real drag)
+    if (!drag.dragging) {
+      doTapCard(drag.id);
+      return;
+    }
+
+    // Drop: use dragged card center for hit (more reliable than finger tip alone)
+    syncPileRects(session);
+    const st = session.getState();
+    const dropX = p.x - drag.grabDx + drag.home.w / 2;
+    const dropY = p.y - drag.grabDy + drag.home.h / 2;
+    // Prefer center; fall back to pointer if center misses (edge of board)
+    let targetId =
+      pickCard(st, { x: dropX, y: dropY }, { excludeId: drag.id }) ??
+      pickCard(st, p, { excludeId: drag.id });
+    const a = st.cards[drag.id];
+    const b = targetId ? st.cards[targetId] : null;
+
+    if (targetId && a && b && canMatchCards(a, b)) {
+      const { matched } = session.tryMatchPair(drag.id, targetId);
+      if (matched) {
+        drawsWithoutMatch = 0;
+        softTipShown = false;
+        cards.clearDrag(drag.id);
+        const pair = [drag.id, targetId];
+        cards.sync(session.getState(), pair);
+        refresh();
+        cards.flyAway(pair, () => refresh(), app.ticker);
+        return;
+      }
+    }
+
+    // Different card / empty: animate back to original seat
+    cards.snapBack(
+      drag.id,
+      { x: drag.home.x, y: drag.home.y },
+      () => {
+        cards.clearDrag(drag.id);
+        refresh();
+      },
+      app.ticker,
+    );
+  };
+
+  const onPointerCancel = (e: PointerEvent) => {
+    if (!activeDrag || e.pointerId !== activeDrag.pointerId) return;
+    const drag = activeDrag;
+    activeDrag = null;
+    if (drag.dragging) {
+      cards.snapBack(
+        drag.id,
+        { x: drag.home.x, y: drag.home.y },
+        () => {
+          cards.clearDrag(drag.id);
+          refresh();
+        },
+        app.ticker,
+      );
+    } else {
+      cards.clearDrag(drag.id);
+    }
+  };
+
+  canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+  canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+  canvas.addEventListener('pointerup', onPointerUp, { passive: false });
+  canvas.addEventListener('pointercancel', onPointerCancel, { passive: false });
   canvas.addEventListener(
     'touchmove',
     (e) => e.preventDefault(),

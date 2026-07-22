@@ -17,8 +17,8 @@
 | R0 基线 | `01_baseline_notes.md` | ✅ 半（无录屏→R4 补） |
 | R1 源卡 | `sources/` ×5 | ✅ 偏（品类薄，不补搜） |
 | R2 视觉 | `02_visual_spec.md` v0.1 | ✅ |
-| R2 UE | `03_ue_event_table.md` v1.1 | ✅ |
-| R2 动画 | `04_animation_params.md` v0.1 | ✅ |
+| R2 UE | `03_ue_event_table.md` **v1.2**（B′ 拖放合流） | ✅ |
+| R2 动画 | `04_animation_params.md` **v0.2**（snap/drag/busy） | ✅ |
 | R2 反模式 | `05_antipatterns.md` | ✅ |
 | 综合 | `06_synthesis.md` v2 | ✅ |
 | R3 反查 | `07_gap_audit.md` v2 | ✅ |

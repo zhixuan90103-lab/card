@@ -1,6 +1,6 @@
 # 项目文档索引
 
-**更新：** 2026-07-22（Level01 全日总整理 D10–D26）
+**更新：** 2026-07-22（拖拽配对 + 座位阴影 + 牌背；见 changelog）
 
 > **新窗口开工（规则/实现）：** [`HANDOFF_IMPLEMENTATION.md`](./HANDOFF_IMPLEMENTATION.md) → [`design/13`](./design/13_mvp_plan_and_todolist.md)  
 > **新窗口开工（美术+体验）：** [`HANDOFF_ART_UX.md`](./HANDOFF_ART_UX.md)  
@@ -33,7 +33,16 @@
 | [research/path-lock/00_INDEX.md](./research/path-lock/00_INDEX.md) | **路径锁检索成果**（含反查 `07_gap_audit`） |
 | [design/17_art_ux_research_plan.md](./design/17_art_ux_research_plan.md) | **美术·UI/UE·动画·手感 · 检索计划 v1.2**（规格结案·参数假设） |
 | [research/art-ux/00_INDEX.md](./research/art-ux/00_INDEX.md) | Art/UX 成果 · 有效源 [`12`](../research/art-ux/12_effective_sources_list.md) · 钉 [`08`](../research/art-ux/08_impl_pins_r31.md) |
-| [research/handfeel/00_gap_audit_and_plan_v1.md](./research/handfeel/00_gap_audit_and_plan_v1.md) | 手感补漏（已吸收进 17） |
+| [research/handfeel/00_gap_audit_and_plan_v1.md](./research/handfeel/00_gap_audit_and_plan_v1.md) | 手感补漏祖先（已吸收进 17） |
+| [research/handfeel/00_INDEX.md](./research/handfeel/00_INDEX.md) | 手感目录 |
+| [research/handfeel/01_feedback_animation_research_plan.md](./research/handfeel/01_feedback_animation_research_plan.md) | 手感实现与校准计划（检索归档） |
+| [research/handfeel/07_round3_desk_research.md](./research/handfeel/07_round3_desk_research.md) | 第三轮检索收口 |
+| [research/handfeel/08_self_consistency_audit.md](./research/handfeel/08_self_consistency_audit.md) | **手感自洽评估 4.0/5** |
+| [research/handfeel/09_physical_feel_research_plan.md](./research/handfeel/09_physical_feel_research_plan.md) | 物理手感检索计划 v1.2（检索关） |
+| [research/handfeel/14_physical_impl_pins.md](./research/handfeel/14_physical_impl_pins.md) | **物理实现钉（POC）** |
+| [research/handfeel/13_physical_gap_audit.md](./research/handfeel/13_physical_gap_audit.md) | 物理轨反查 |
+| [research/handfeel/10_physical_ue_events.md](./research/handfeel/10_physical_ue_events.md) | 物理 UE 事件草案 v0.2 |
+| [research/art-ux/03_ue_event_table.md](./research/art-ux/03_ue_event_table.md) | **UE 事件表 v1.2**（唯一源） |
 
 ---
 
@@ -42,6 +51,11 @@
 | 文档 | 说明 |
 |------|------|
 | [changelog/2026-07-22_full_roundup.md](./changelog/2026-07-22_full_roundup.md) | **全日权威总表（优先读）** |
+| [changelog/2026-07-22_d27_fair_keys.md](./changelog/2026-07-22_d27_fair_keys.md) | **D27 公平钥匙几何 + hard 可清** |
+| [changelog/2026-07-22_near_miss_p0.md](./changelog/2026-07-22_near_miss_p0.md) | **Near-miss P0（差一点体感·发局）** |
+| [changelog/2026-07-22_drag_match_pile_shadow.md](./changelog/2026-07-22_drag_match_pile_shadow.md) | 拖拽配对 + 牌背 + 抽牌区常驻阴影 |
+| [changelog/2026-07-22_poker_assets.md](./changelog/2026-07-22_poker_assets.md) | Poker 正/背资源与 bake |
+| [changelog/2026-07-22_art_warm_cards.md](./changelog/2026-07-22_art_warm_cards.md) | 暖色美术迭代 |
 | [changelog/2026-07-22_path_lock_h1.md](./changelog/2026-07-22_path_lock_h1.md) | 路径锁钥匙稀缺 H1 |
 | [changelog/2026-07-22_content_single_infinite.md](./changelog/2026-07-22_content_single_infinite.md) | 单关无限 + 难度档 |
 | [changelog/2026-07-22_color_match_d22.md](./changelog/2026-07-22_color_match_d22.md) | 红黑配对 |
@@ -67,7 +81,8 @@
 
 | 笔记本 | ID | 说明 |
 |--------|-----|------|
-| 配对牌项目笔记 | `8accbc6d-2100-42dd-b94f-54be4a93740b` | 产品+技术+**Art/UX**；技术有效源 [`tech-stack/12`](../research/tech-stack/12_effective_sources_list.md)；美术/手感有效源 [`art-ux/12`](../research/art-ux/12_effective_sources_list.md) |
+| 配对牌项目笔记 | `8accbc6d-2100-42dd-b94f-54be4a93740b` | 产品+技术+**Art/UX**；技术有效源 [`tech-stack/12`](../research/tech-stack/12_effective_sources_list.md)；美术有效源 [`art-ux/12`](../research/art-ux/12_effective_sources_list.md) |
+| **poker类手感调优** | `b0897377-3dc5-48c2-bc98-554cb380d352` | 点选+拖放手感；有效源 [`handfeel/12`](../research/handfeel/12_effective_sources_list.md) · 自洽 [`handfeel/08`](../research/handfeel/08_self_consistency_audit.md) |
 | 排序，归位，整理类游戏调研 | `c4153ca3-4bce-43da-9c56-0ae6d3f367c2` | 品类调研 |
 
 ---

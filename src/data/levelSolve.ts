@@ -96,15 +96,49 @@ function freeByMatchKey(state: GameState): Map<string, CardId[]> {
   return by;
 }
 
-export function canFullyClear(level: Level, solveSeed = 1): boolean {
+export type GreedyProgressProbe = {
+  /** 贪心能否清桌 */
+  clearable: boolean;
+  /** 第一次「无 free 对、只能抽」前已消的配对数 */
+  matchesBeforeFirstStall: number;
+  /** 第一次 stall 时谜题区存活张数 */
+  puzzleAtFirstStall: number;
+  /** 开局谜题区张数 */
+  initialPuzzle: number;
+};
+
+/**
+ * 贪心路径探针：用于发局筛「开局就旱 / 过早卡死」。
+ * 与 canFullyClear 同一套消法。
+ */
+export function probeGreedyProgress(
+  level: Level,
+  solveSeed = 1,
+): GreedyProgressProbe {
   const state = createStateFromLevel(level);
   ensureWaste(state);
   const rand = mulberry32(solveSeed);
+  const initialPuzzle = puzzleAlive(state).length;
 
+  let matches = 0;
+  let matchesBeforeFirstStall = -1;
+  let puzzleAtFirstStall = initialPuzzle;
   let idleDraws = 0;
+
   for (let step = 0; step < MAX_STEPS; step++) {
-    if (isWon(state)) return true;
-    if (puzzleAlive(state).length === 0) return true;
+    if (isWon(state) || puzzleAlive(state).length === 0) {
+      if (matchesBeforeFirstStall < 0) {
+        matchesBeforeFirstStall = matches;
+        puzzleAtFirstStall = 0;
+      }
+      return {
+        clearable: true,
+        matchesBeforeFirstStall:
+          matchesBeforeFirstStall < 0 ? matches : matchesBeforeFirstStall,
+        puzzleAtFirstStall,
+        initialPuzzle,
+      };
+    }
 
     const byKey = freeByMatchKey(state);
 
@@ -122,8 +156,15 @@ export function canFullyClear(level: Level, solveSeed = 1): boolean {
     if (pair) {
       removePair(state, pair[0], pair[1]);
       ensureWaste(state);
+      matches += 1;
       idleDraws = 0;
       continue;
+    }
+
+    // 第一次无 free 对 → 记 stall
+    if (matchesBeforeFirstStall < 0) {
+      matchesBeforeFirstStall = matches;
+      puzzleAtFirstStall = puzzleAlive(state).length;
     }
 
     const need = new Set<string>();
@@ -138,6 +179,7 @@ export function canFullyClear(level: Level, solveSeed = 1): boolean {
           if (ids.length >= 2) {
             removePair(state, ids[0]!, ids[1]!);
             ensureWaste(state);
+            matches += 1;
             did = true;
             idleDraws = 0;
             break;
@@ -149,13 +191,58 @@ export function canFullyClear(level: Level, solveSeed = 1): boolean {
 
     idleDraws += 1;
     const deckN = state.stock.length + state.waste.length;
-    if (deckN === 0 || idleDraws > Math.max(deckN * 2, 6)) return false;
+    if (deckN === 0 || idleDraws > Math.max(deckN * 2, 6)) {
+      return {
+        clearable: false,
+        matchesBeforeFirstStall:
+          matchesBeforeFirstStall < 0 ? matches : matchesBeforeFirstStall,
+        puzzleAtFirstStall:
+          matchesBeforeFirstStall < 0
+            ? puzzleAlive(state).length
+            : puzzleAtFirstStall,
+        initialPuzzle,
+      };
+    }
 
     if (state.stock.length === 0) {
-      if (state.waste.length === 0) return false;
+      if (state.waste.length === 0) {
+        return {
+          clearable: false,
+          matchesBeforeFirstStall:
+            matchesBeforeFirstStall < 0 ? matches : matchesBeforeFirstStall,
+          puzzleAtFirstStall:
+            matchesBeforeFirstStall < 0
+              ? puzzleAlive(state).length
+              : puzzleAtFirstStall,
+          initialPuzzle,
+        };
+      }
       recycle(state, rand);
     }
-    if (!flipStock(state)) return false;
+    if (!flipStock(state)) {
+      return {
+        clearable: false,
+        matchesBeforeFirstStall:
+          matchesBeforeFirstStall < 0 ? matches : matchesBeforeFirstStall,
+        puzzleAtFirstStall:
+          matchesBeforeFirstStall < 0
+            ? puzzleAlive(state).length
+            : puzzleAtFirstStall,
+        initialPuzzle,
+      };
+    }
   }
-  return isWon(state);
+
+  const won = isWon(state) || puzzleAlive(state).length === 0;
+  return {
+    clearable: won,
+    matchesBeforeFirstStall:
+      matchesBeforeFirstStall < 0 ? matches : matchesBeforeFirstStall,
+    puzzleAtFirstStall,
+    initialPuzzle,
+  };
+}
+
+export function canFullyClear(level: Level, solveSeed = 1): boolean {
+  return probeGreedyProgress(level, solveSeed).clearable;
 }

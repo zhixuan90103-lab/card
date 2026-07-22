@@ -1,9 +1,9 @@
 # R3.1 · 实现钉（无外搜补漏）
 
 **日期：** 2026-07-22  
-**状态：** 拍板 · 实现必遵  
-**来源：** `07_gap_audit.md` v2 §6  
-**关联：** `02` `03` `04` · `HANDOFF_ART_UX`
+**状态：** 拍板 · 实现必遵 · **B′ 修订 H-busy**（handfeel/01 v1.1）  
+**来源：** `07_gap_audit.md` v2 §6 · handfeel `04_gap_audit_v1`  
+**关联：** `02` `03` v1.2 `04` v0.2 · `HANDOFF_ART_UX`
 
 ---
 
@@ -17,7 +17,7 @@
 | H-red | 先试 `0xb71c1c`；糊则回 `0xc0392b` | — |
 | H-corner | 角标字号 **12**；挤则 11 | 退回居中单行仅作 fallback |
 | H-free | free = 亮面；**无**常驻外发光 | — |
-| H-busy | 仅 `flyAway` 进 busy | 不通过再评估缓冲 |
+| H-busy | **`flyAway` ∪ `snapBack` ∪ 拖中** 进 busy；**flip 不进**（B′ 与代码对齐） | 输入缓冲后置；不通过再评估 |
 | H-draw | 瞬时 | 150ms 飞入 |
 | H-label | **保留**「抽牌区/抽出叠」+ 剩余 N | 外放再删标签 |
 
@@ -82,6 +82,27 @@ match 确认
 
 **禁止：** 在 flyAway 中途对未死牌全量 sync 冲掉动画。  
 **禁止：** 对 pair 播 flip。
+
+### S3.1 · busy 实现式（B′）
+
+```text
+isBusy =
+  animating.size > 0   // flyAway ∪ snapBack
+  ∨ dragPos.size > 0
+
+// 禁：抽、撤、pointer 开新手（main 已守）
+// 不进 busy：A-flip / 选中静置
+```
+
+### S3.2 · 拖放路径钉
+
+```text
+阈值 8 design px → dragging
+合法松手 → clearDrag + flyAway(pair)   // E03b
+非法/空地 → snapBack(home)            // E04b
+pointercancel → snapBack               // E-drag-cancel
+拖中：scale 1.04；selected 描边关闭
+```
 
 ---
 

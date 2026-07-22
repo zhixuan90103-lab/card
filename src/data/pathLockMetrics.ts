@@ -3,8 +3,18 @@
  */
 import type { Level, LevelCardDef, Rank, Suit } from '../core/types';
 import { matchKey, matchKeyOf, pickSuitForColor, suitColor } from '../core/types';
-import { canFullyClear } from './levelSolve';
+import { canFullyClear, probeGreedyProgress } from './levelSolve';
 import type { StockEntry } from './suitPaint';
+
+/** 硬门槛：稀缺不得越界 */
+export const KEY_SCARCITY_HARD_LO = 2;
+export const KEY_SCARCITY_HARD_HI = 4;
+/** 偏好：near-miss 优先 3～4（锁+约两钥） */
+export const KEY_SCARCITY_LO = 3;
+export const KEY_SCARCITY_HI = 4;
+
+/** 开局至少消几对再允许 stall（near-miss：先有进度） */
+export const EARLY_MIN_MATCHES_BEFORE_STALL = 3;
 
 export type MatchKey = string;
 
@@ -76,9 +86,69 @@ export function passKeyOnBoard(
   return keyOnBoardRatio(level, meta) >= minRatio;
 }
 
+/** 组 id：`c12_2` → `c12` */
+function groupKeyOfCardId(id: string): string {
+  const i = id.lastIndexOf('_');
+  return i >= 0 ? id.slice(0, i) : id;
+}
+
+/**
+ * D27：禁止跨锁埋钥
+ * 任一锁堆内（除锁顶本身）不得出现 **另一把锁** 的 match-key。
+ * （允许同锁自己的钥匙压在无关组下；禁止「A 锁下塞 B 钥匙」）
+ */
+export function passNoCrossLockKeyBurial(
+  level: Level,
+  meta: LockMetaSlice,
+): boolean {
+  if (meta.lockIds.length < 2) return true;
+
+  const lockKeyById = new Map<string, MatchKey>();
+  for (const lockId of meta.lockIds) {
+    const card = level.cards.find((c) => c.id === lockId);
+    if (!card?.suit) continue;
+    lockKeyById.set(lockId, matchKey(card.rank, card.suit));
+  }
+
+  for (const lockId of meta.lockIds) {
+    const gKey = groupKeyOfCardId(lockId);
+    for (const c of level.cards) {
+      if (groupKeyOfCardId(c.id) !== gKey) continue;
+      if (c.id === lockId) continue;
+      if (!c.suit) continue;
+      const k = matchKey(c.rank, c.suit);
+      for (const [otherId, otherKey] of lockKeyById) {
+        if (otherId === lockId) continue;
+        if (k === otherKey) return false;
+      }
+    }
+  }
+  return true;
+}
+
 export function passClearGreedy(level: Level, seed: number): boolean {
   try {
     return canFullyClear(level, seed + 1);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Near-miss 前半节奏：贪心路径上，第一次「无 free 对」前至少消过若干对。
+ * 拒绝「开局消一对就只能干抽」的旱局。
+ */
+export function passEarlyProgress(
+  level: Level,
+  seed: number,
+  minMatches = EARLY_MIN_MATCHES_BEFORE_STALL,
+): boolean {
+  try {
+    const p = probeGreedyProgress(level, seed + 1);
+    // 一路消到赢、中途无 stall：也算前半有推进
+    if (p.clearable && p.matchesBeforeFirstStall >= minMatches) return true;
+    if (p.clearable && p.puzzleAtFirstStall === 0) return true;
+    return p.matchesBeforeFirstStall >= minMatches;
   } catch {
     return false;
   }
@@ -279,7 +349,16 @@ export function passDealHard(
   seed: number,
 ): boolean {
   if (!passClearGreedy(level, seed)) return false;
-  if (!passKeyScarcity(level, meta, 2, 4)) return false;
+  if (
+    !passKeyScarcity(
+      level,
+      meta,
+      KEY_SCARCITY_HARD_LO,
+      KEY_SCARCITY_HARD_HI,
+    )
+  ) {
+    return false;
+  }
   if (!passKeyOnBoard(level, meta, 0.65)) return false;
   return true;
 }
