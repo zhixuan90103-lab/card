@@ -108,23 +108,35 @@ export function getLastShellMetrics(): ShellMetrics {
 
 /** Subscribe to viewport changes; returns dispose. */
 export function watchShellLayout(onChange: (m: ShellMetrics) => void): () => void {
-  const run = () => onChange(applyShellLayout());
-  run();
-  window.addEventListener('resize', run);
-  window.visualViewport?.addEventListener('resize', run);
-  window.visualViewport?.addEventListener('scroll', run);
-  window.addEventListener('orientationchange', run);
-  window.addEventListener('pageshow', run);
-  window.addEventListener('focus', run);
-  requestAnimationFrame(run);
-  setTimeout(run, 100);
-  setTimeout(run, 400);
+  /** iOS VV scroll/resize fires very often — must debounce or GPU resize thrash freezes the game. */
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const runNow = () => onChange(applyShellLayout());
+  const runDebounced = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      runNow();
+    }, 80);
+  };
+
+  runNow();
+  window.addEventListener('resize', runDebounced);
+  window.visualViewport?.addEventListener('resize', runDebounced);
+  // scroll: only debounce; do not resize GPU every rubber-band pixel
+  window.visualViewport?.addEventListener('scroll', runDebounced);
+  window.addEventListener('orientationchange', runDebounced);
+  window.addEventListener('pageshow', runNow);
+  window.addEventListener('focus', runDebounced);
+  requestAnimationFrame(runNow);
+  setTimeout(runNow, 100);
+  setTimeout(runNow, 400);
   return () => {
-    window.removeEventListener('resize', run);
-    window.visualViewport?.removeEventListener('resize', run);
-    window.visualViewport?.removeEventListener('scroll', run);
-    window.removeEventListener('orientationchange', run);
-    window.removeEventListener('pageshow', run);
-    window.removeEventListener('focus', run);
+    if (timer) clearTimeout(timer);
+    window.removeEventListener('resize', runDebounced);
+    window.visualViewport?.removeEventListener('resize', runDebounced);
+    window.visualViewport?.removeEventListener('scroll', runDebounced);
+    window.removeEventListener('orientationchange', runDebounced);
+    window.removeEventListener('pageshow', runNow);
+    window.removeEventListener('focus', runDebounced);
   };
 }

@@ -104,8 +104,9 @@ export function watchAppLifecycle(handlers: LifecycleHandlers): LifecycleHandle 
     void App.addListener('appStateChange', ({ isActive }) => {
       nativeActive = isActive;
       if (isActive) {
-        // Authoritative foreground; document.hidden may still be true for a beat
-        resume(48, true);
+        // Authoritative foreground; document.hidden / VV may still be 0 for a beat.
+        // Slightly longer delay so shellLayout has a non-zero frame before rehydrate.
+        resume(80, true);
       } else {
         suspend();
       }

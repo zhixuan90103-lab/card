@@ -10,7 +10,12 @@ import {
   getWasteRect,
   stockStackOffset,
 } from '../data/pileLayoutRuntime';
-import { getBackTexture, getFaceTexture } from './cardAssets';
+import {
+  CARD_CORNER_RADIUS,
+  getBackTexture,
+  getFaceTexture,
+  getShadowTexture,
+} from './cardAssets';
 import {
   easeInOutSmooth,
   easeOutQuad,
@@ -21,7 +26,7 @@ import {
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from '../viewport/design';
 import { Theme } from './theme';
 
-const RADIUS = 8;
+const RADIUS = CARD_CORNER_RADIUS;
 
 /**
  * Stacking bands on `CardRenderer.root` (sortableChildren).
@@ -67,19 +72,22 @@ function wasteZ(idx: number): number {
 
 type CardView = {
   root: Container;
-  shadow: Graphics;
-  /** Shared back art Card_B.png */
+  /** Shared baked soft shadow (no per-card Graphics redraw) */
+  shadow: Sprite;
+  /** Shared back art Card_B.png (corners baked in texture) */
   back: Sprite;
-  /** Face art R_ / B_ rank PNGs */
+  /** Face art R_ / B_ rank PNGs (corners baked in texture) */
   face: Sprite;
-  /** Rounds sprites to card corners */
-  cardMask: Graphics;
   /** Selection / subtle rim */
   frame: Graphics;
   /** Darken overlay when another card flips on top of stack */
   dim: Graphics;
   cardId: CardId;
   baseY: number;
+  /** Face rim already painted (static for CARD_W×CARD_H) */
+  faceRimReady: boolean;
+  /** Dim plate geometry ready */
+  dimShapeReady: boolean;
 };
 
 /** Snapshot of a card's on-screen pose (parent-space center). */
@@ -99,6 +107,13 @@ export type CardPose = {
 export class CardRenderer {
   readonly root = new Container();
   private views = new Map<CardId, CardView>();
+  /**
+   * Display-object pool for eliminated / unused cards.
+   * Acquire on need; release after exit animation or when !alive and idle.
+   * Caps size so a bug cannot grow forever.
+   */
+  private readonly pool: CardView[] = [];
+  private static readonly POOL_MAX = 80;
   /** meet / snap / draw-move / recycle — isBusy (blocks new input) */
   private animating = new Set<CardId>();
   /**
@@ -220,6 +235,11 @@ export class CardRenderer {
    * Reset only on bootstrap / new run.
    */
   private stockFootprintPeakVis = 0;
+  /** Skip seat Graphics rebuild when footprint unchanged */
+  private lastStockSeatKey = '';
+  private lastWasteSeatKey = '';
+  private lastStockSlotKey = '';
+  private lastWasteSlotKey = '';
 
   constructor() {
     this.root.label = 'cards';
@@ -243,16 +263,28 @@ export class CardRenderer {
 
   /** Call after `loadCardFaceAssets()`. */
   bootstrap(state: GameState): void {
-    // Keep empty-slot graphics; rebuild card views only
-    for (const view of this.views.values()) {
-      this.root.removeChild(view.root);
+    // Return all live views to pool, then re-acquire only alive cards
+    for (const id of [...this.views.keys()]) {
+      this.releaseView(id);
     }
-    this.views.clear();
     this.stockFootprintPeakVis = 0;
+    this.animating.clear();
+    this.exiting.clear();
+    this.flipping.clear();
+    this.underFlipDimIds.clear();
+    this.hintIds.clear();
+    this.dragPos.clear();
+    this.dragFollow.clear();
+    if (this.dragFollowTick && this.dragFollowTicker) {
+      this.dragFollowTicker.remove(this.dragFollowTick);
+      this.dragFollowTick = null;
+      this.dragFollowTicker = null;
+    }
+    this.stopSelectIdle();
+
     for (const card of Object.values(state.cards)) {
-      const view = this.makeView(card);
-      this.views.set(card.id, view);
-      this.root.addChild(view.root);
+      if (!card.alive) continue;
+      this.acquireView(card);
     }
     this.sync(state);
   }
@@ -261,14 +293,25 @@ export class CardRenderer {
    * Ghost frame when pile is empty — same size as a card (no own shadow;
    * seat shadows are painted separately and always stay).
    */
-  private paintEmptySlot(g: Graphics, x: number, y: number, w: number, h: number): void {
+  private paintEmptySlot(
+    g: Graphics,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    which: 'stock' | 'waste',
+  ): void {
+    const key = `${x | 0},${y | 0},${w | 0},${h | 0}`;
+    if (which === 'stock' && key === this.lastStockSlotKey && g.visible) return;
+    if (which === 'waste' && key === this.lastWasteSlotKey && g.visible) return;
+    if (which === 'stock') this.lastStockSlotKey = key;
+    else this.lastWasteSlotKey = key;
+
     g.clear();
     g.visible = true;
     g.zIndex = CARD_Z.seatPlate;
-    // Soft fill plate
     g.roundRect(x, y, w, h, RADIUS);
     g.fill({ color: 0x2c3540, alpha: 0.1 });
-    // Soft rim
     g.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, RADIUS - 0.5);
     g.stroke({
       width: 1.5,
@@ -283,10 +326,23 @@ export class CardRenderer {
    * Base rect = stack footprint; applies card-shadow offset/scale/alpha once
    * (not per-card).
    */
-  private paintSeatShadow(g: Graphics, x: number, y: number, w: number, h: number): void {
+  private paintSeatShadow(
+    g: Graphics,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    which: 'stock' | 'waste',
+  ): void {
+    const { offsetX, offsetY, scale, alpha } = getCardShadowParams();
+    const key = `${x | 0},${y | 0},${w | 0},${h | 0},${scale},${alpha},${offsetX},${offsetY}`;
+    if (which === 'stock' && key === this.lastStockSeatKey && g.visible) return;
+    if (which === 'waste' && key === this.lastWasteSeatKey && g.visible) return;
+    if (which === 'stock') this.lastStockSeatKey = key;
+    else this.lastWasteSeatKey = key;
+
     g.clear();
     g.visible = true;
-    const { offsetX, offsetY, scale, alpha } = getCardShadowParams();
     const sw = w * scale;
     const sh = h * scale;
     const sx = x + (w - sw) / 2 + offsetX;
@@ -351,10 +407,12 @@ export class CardRenderer {
         stockFp.y,
         stockFp.w,
         stockFp.h,
+        'stock',
       );
     } else {
       this.stockSeatShadow.clear();
       this.stockSeatShadow.visible = false;
+      this.lastStockSeatKey = '';
     }
 
     if (state.waste.length > 0) {
@@ -364,10 +422,12 @@ export class CardRenderer {
         waste.y,
         waste.w,
         waste.h,
+        'waste',
       );
     } else {
       this.wasteSeatShadow.clear();
       this.wasteSeatShadow.visible = false;
+      this.lastWasteSeatKey = '';
     }
   }
 
@@ -380,55 +440,183 @@ export class CardRenderer {
 
     // Always show seat plates (with or without cards)
     const plateFp = this.stockPlateFootprint(stock);
-    this.paintEmptySlot(this.stockSlot, plateFp.x, plateFp.y, plateFp.w, plateFp.h);
-    this.paintEmptySlot(this.wasteSlot, waste.x, waste.y, waste.w, waste.h);
+    this.paintEmptySlot(
+      this.stockSlot,
+      plateFp.x,
+      plateFp.y,
+      plateFp.w,
+      plateFp.h,
+      'stock',
+    );
+    this.paintEmptySlot(
+      this.wasteSlot,
+      waste.x,
+      waste.y,
+      waste.w,
+      waste.h,
+      'waste',
+    );
   }
 
-  private makeView(card: Card): CardView {
+  /** Create a fresh display shell (not yet in `views`). */
+  private createViewShell(): CardView {
     const root = new Container();
-    root.label = card.id;
     root.eventMode = 'none';
 
-    const shadow = new Graphics();
+    const shadow = new Sprite(getShadowTexture());
+    shadow.roundPixels = false;
+    shadow.anchor.set(0.5);
+    shadow.tint = 0x2c3540;
+    shadow.eventMode = 'none';
+
     const back = new Sprite(getBackTexture());
     back.roundPixels = false;
-    const face = new Sprite(getFaceTexture(card.suit, card.rank));
+    const face = new Sprite(getFaceTexture('H', 'A'));
     face.roundPixels = false;
-    const cardMask = new Graphics();
-    // Shared mask for whichever side is visible
-    back.mask = cardMask;
-    face.mask = cardMask;
     const frame = new Graphics();
+    frame.eventMode = 'none';
     const dim = new Graphics();
     dim.visible = false;
     dim.eventMode = 'none';
 
-    root.addChild(shadow, back, face, cardMask, frame, dim);
+    root.addChild(shadow, back, face, frame, dim);
     return {
       root,
       shadow,
       back,
       face,
-      cardMask,
       frame,
       dim,
-      cardId: card.id,
+      cardId: '' as CardId,
       baseY: 0,
+      faceRimReady: false,
+      dimShapeReady: false,
     };
+  }
+
+  /** Bind shell to a logical card and register in `views`. */
+  private acquireView(card: Card): CardView {
+    const view = this.pool.pop() ?? this.createViewShell();
+    view.cardId = card.id;
+    view.root.label = card.id;
+    view.baseY = 0;
+    view.face.texture = getFaceTexture(card.suit, card.rank);
+    view.back.texture = getBackTexture();
+    view.shadow.texture = getShadowTexture();
+    view.shadow.visible = false;
+    view.face.visible = false;
+    view.back.visible = false;
+    view.frame.visible = false;
+    view.dim.visible = false;
+    view.dim.alpha = 1;
+    view.root.visible = true;
+    view.root.alpha = 1;
+    view.root.scale.set(1);
+    view.root.rotation = 0;
+    view.root.pivot.set(0, 0);
+    view.root.x = 0;
+    view.root.y = 0;
+    view.root.zIndex = 0;
+    if (view.root.parent !== this.root) {
+      this.root.addChild(view.root);
+    }
+    this.views.set(card.id, view);
+    return view;
+  }
+
+  /**
+   * Detach view from active map and return to pool (or destroy if pool full).
+   * Safe if id already released.
+   */
+  private releaseView(id: CardId): void {
+    const view = this.views.get(id);
+    if (!view) return;
+
+    this.views.delete(id);
+    this.animating.delete(id);
+    this.exiting.delete(id);
+    this.flipping.delete(id);
+    this.underFlipDimIds.delete(id);
+    this.hintIds.delete(id);
+    this.dragPos.delete(id);
+    this.dragFollow.delete(id);
+    if (this.selectIdle?.id === id) this.stopSelectIdle();
+
+    view.root.visible = false;
+    view.root.alpha = 1;
+    view.root.scale.set(1);
+    view.root.rotation = 0;
+    view.root.pivot.set(0, 0);
+    view.root.x = 0;
+    view.root.y = 0;
+    view.shadow.visible = false;
+    view.face.visible = false;
+    view.back.visible = false;
+    view.frame.visible = false;
+    view.dim.visible = false;
+    view.dim.alpha = 1;
+    view.cardId = '' as CardId;
+    view.root.label = 'pooled';
+
+    if (view.root.parent) {
+      view.root.parent.removeChild(view.root);
+    }
+
+    if (this.pool.length < CardRenderer.POOL_MAX) {
+      this.pool.push(view);
+    } else {
+      try {
+        view.root.destroy({ children: true });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  /** Debug / tests */
+  get activeViewCount(): number {
+    return this.views.size;
+  }
+
+  get pooledViewCount(): number {
+    return this.pool.length;
+  }
+
+  /** Place shared shadow sprite from cardShadowRuntime params. */
+  private layoutCardShadow(
+    view: CardView,
+    w: number,
+    h: number,
+    show: boolean,
+  ): void {
+    if (!show) {
+      view.shadow.visible = false;
+      return;
+    }
+    const { offsetX, offsetY, scale, alpha } = getCardShadowParams();
+    view.shadow.visible = true;
+    view.shadow.texture = getShadowTexture();
+    view.shadow.width = w * scale;
+    view.shadow.height = h * scale;
+    view.shadow.x = w / 2 + offsetX;
+    view.shadow.y = h / 2 + offsetY;
+    view.shadow.alpha = alpha;
   }
 
   /** Dim geometry with fill alpha 1; fade via dim.alpha */
   private ensureCardDimShape(view: CardView): void {
-    view.dim.clear();
-    view.dim.roundRect(0, 0, CARD_W, CARD_H, RADIUS);
-    view.dim.fill({ color: 0x000000, alpha: 1 });
+    if (!view.dimShapeReady) {
+      view.dim.clear();
+      view.dim.roundRect(0, 0, CARD_W, CARD_H, RADIUS);
+      view.dim.fill({ color: 0x000000, alpha: 1 });
+      view.dimShapeReady = true;
+    }
     view.dim.visible = true;
   }
 
   private setCardDim(view: CardView, on: boolean, alpha?: number): void {
     if (!on) {
       this.underFlipDimIds.delete(view.cardId);
-      view.dim.clear();
       view.dim.alpha = 1;
       view.dim.visible = false;
       return;
@@ -442,33 +630,8 @@ export class CardRenderer {
   private clearDimUnlessUnderFlip(view: CardView): void {
     if (this.underFlipDimIds.has(view.cardId)) return;
     if (!view.dim.visible && view.dim.alpha === 1) return;
-    view.dim.clear();
     view.dim.alpha = 1;
     view.dim.visible = false;
-  }
-
-  /**
-   * Full card-sized shadow. Size/offset/alpha from cardShadowRuntime (tuner).
-   */
-  private paintShadow(g: Graphics, w: number, h: number): void {
-    g.clear();
-    const { offsetX, offsetY, scale, alpha } = getCardShadowParams();
-    const sw = w * scale;
-    const sh = h * scale;
-    // Center scaled shadow on card, then apply offset
-    const sx = (w - sw) / 2 + offsetX;
-    const sy = (h - sh) / 2 + offsetY;
-    const r = RADIUS * scale;
-
-    // Single layer — same proportions as card (no outer halo)
-    g.roundRect(sx, sy, sw, sh, r);
-    g.fill({ color: 0x2c3540, alpha });
-  }
-
-  private setMask(view: CardView, w: number, h: number): void {
-    view.cardMask.clear();
-    view.cardMask.roundRect(0, 0, w, h, RADIUS);
-    view.cardMask.fill({ color: 0xffffff });
   }
 
   /**
@@ -480,30 +643,21 @@ export class CardRenderer {
     spr.y = 0;
     spr.width = w;
     spr.height = h;
-    // Never tint art — default must stay pure white multiply
     spr.tint = 0xffffff;
     spr.alpha = 1;
   }
 
-  private paintFrame(
-    g: Graphics,
-    w: number,
-    h: number,
-    _selected: boolean,
-    faceUp: boolean,
-  ): void {
-    g.clear();
-    // Selection uses float/scale only — no yellow/gold outline (product request).
-    // Light rim so art edges stay readable on felt
-    if (faceUp) {
-      g.roundRect(0.5, 0.5, w - 1, h - 1, RADIUS - 0.5);
-      g.stroke({
-        width: 1.1,
-        color: Theme.faceStroke,
-        alpha: 0.4,
-        alignment: 0.5,
-      });
-    }
+  private ensureFaceRim(view: CardView, w: number, h: number): void {
+    if (view.faceRimReady) return;
+    view.frame.clear();
+    view.frame.roundRect(0.5, 0.5, w - 1, h - 1, RADIUS - 0.5);
+    view.frame.stroke({
+      width: 1.1,
+      color: Theme.faceStroke,
+      alpha: 0.4,
+      alignment: 0.5,
+    });
+    view.faceRimReady = true;
   }
 
   private showFace(
@@ -511,22 +665,17 @@ export class CardRenderer {
     card: Card,
     w: number,
     h: number,
-    selected: boolean,
+    _selected: boolean,
     opts?: { shadow?: boolean },
   ): void {
-    // Stock/waste seats own a permanent shadow; skip duplicate when seated
-    if (opts?.shadow === false) {
-      view.shadow.clear();
-    } else {
-      this.paintShadow(view.shadow, w, h);
-    }
+    this.layoutCardShadow(view, w, h, opts?.shadow !== false);
     this.clearDimUnlessUnderFlip(view);
     view.back.visible = false;
     view.face.visible = true;
     view.face.texture = getFaceTexture(card.suit, card.rank);
     this.layoutSprite(view.face, w, h);
-    this.setMask(view, w, h);
-    this.paintFrame(view.frame, w, h, selected, true);
+    this.ensureFaceRim(view, w, h);
+    view.frame.visible = true;
   }
 
   private showBack(
@@ -535,19 +684,13 @@ export class CardRenderer {
     h: number,
     opts?: { shadow?: boolean },
   ): void {
-    if (opts?.shadow === false) {
-      view.shadow.clear();
-    } else {
-      this.paintShadow(view.shadow, w, h);
-    }
+    this.layoutCardShadow(view, w, h, opts?.shadow !== false);
     this.clearDimUnlessUnderFlip(view);
     view.face.visible = false;
     view.back.visible = true;
     view.back.texture = getBackTexture();
     this.layoutSprite(view.back, w, h);
-    this.setMask(view, w, h);
-    // No extra frame on back — art already has light border
-    view.frame.clear();
+    view.frame.visible = false;
   }
 
   /** Home (layout) top-left for a card after last sync, or from state. */
@@ -624,7 +767,7 @@ export class CardRenderer {
         zIndex: CARD_Z.drag,
       });
       this.raiseDragCard(view);
-      this.paintShadow(view.shadow, CARD_W, CARD_H);
+      this.layoutCardShadow(view, CARD_W, CARD_H, true);
       // Logical pos = finger (sync/hit paths that read dragPos stay operational)
       this.dragPos.set(id, { x, y });
       if (ticker) this.ensureDragFollowTick(ticker);
@@ -1443,12 +1586,9 @@ export class CardRenderer {
       if (allOff || t >= hardMs) {
         ticker.remove(tick);
         for (const id of orderedIds) this.exiting.delete(id);
-        for (const b of bodies) {
-          b.view.root.visible = false;
-          b.view.root.alpha = 1;
-          b.view.root.scale.set(1);
-          b.view.root.rotation = 0;
-          b.view.root.pivot.set(0, 0);
+        // Return display objects to pool (not just hide)
+        for (const id of orderedIds) {
+          this.releaseView(id);
         }
         onDone();
       }
@@ -2028,6 +2168,9 @@ export class CardRenderer {
     this.syncEmptySlots(state);
     const skip = new Set(skipIds);
     const holdBack = new Set(opts?.holdBackIds ?? []);
+    /** !alive / missing — release after idle (exit path releases itself) */
+    const toRelease: CardId[] = [];
+
     for (const [id, view] of this.views) {
       if (
         skip.has(id) ||
@@ -2042,12 +2185,8 @@ export class CardRenderer {
         continue;
       }
       const card = state.cards[id];
-      if (!card) {
-        view.root.visible = false;
-        continue;
-      }
-      if (!card.alive) {
-        view.root.visible = false;
+      if (!card || !card.alive) {
+        toRelease.push(id);
         continue;
       }
 
@@ -2174,6 +2313,10 @@ export class CardRenderer {
       } else {
         this.showFace(view, card, card.rect.w, card.rect.h, selected);
       }
+    }
+
+    for (const id of toRelease) {
+      this.releaseView(id);
     }
   }
 

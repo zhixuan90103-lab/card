@@ -1,9 +1,9 @@
 # 10 · 技术方案选型结论（T5）
 
-**状态：** 已拍板（检索后）  
-**更新：** 2026-07-21  
-**依据：** `09_tech_research_plan.md` + `research/tech-stack/`  
-**关联：** D15 / D16 / D17 见 `04`；视口 `11`；反查 `12`（第二轮）；计划 **`09` v3 检索结案**
+**状态：** 已拍板（检索后）· **2026-07-23 补 D29 后端偏好**  
+**更新：** 2026-07-23  
+**依据：** `09_tech_research_plan.md` + `research/tech-stack/` + T-WG `20`/`21`  
+**关联：** D15 / D16 / D17 / **D28** / **D29** 见 `04`；视口 `11`；反查 `12`；WebGPU 计划 **`20` v0.6**
 
 ---
 
@@ -12,13 +12,16 @@
 | 项 | 决定 |
 |----|------|
 | **主渲染** | **PixiJS v8**（单引擎，不与 Three 混用） |
-| **版本锚点** | `pixi.js` **8.19.0**（npm latest @ 2026-07-21；建议 `^8.19.0`；脚手架 `npm create pixi.js@latest`） |
-| **UI** | **DOM 叠在 phone-frame 内**（按钮 / 结算 / 设置）；牌桌与飞牌在 Canvas |
+| **版本锚点** | `pixi.js` **8.19.0**（建议 `^8.19.0`） |
+| **GPU 后端（D29）** | **优先 WebGPU**，不可用则 **WebGL**；`preference: ['webgpu','webgl']`；**禁止 canvas 玩家路径** |
+| **UI** | **DOM 叠在 phone-frame 内**；牌桌与飞牌在 GPU canvas |
 | **坐标** | **设计分辨率 393 × 852**（iPhone 15 CSS 逻辑像素） |
-| **PC 预览** | 自建 **phone-frame letterbox**（非依赖 DevTools 唯一验收） |
-| **输入** | **逻辑层 hit-test 优先** + 可选引擎顶层拾取校验 |
+| **PC 预览** | 自建 **phone-frame letterbox** |
+| **输入** | **逻辑层 hit-test 优先** |
 | **逻辑 / 渲染** | 纯 TS 核心可单测；渲染仅订阅状态 |
-| **暂缓** | 原生 App、广告 SDK、完整 CI |
+| **生命周期** | **D28** rehydrate；WebGL/WebGPU lost 合流 |
+| **iOS 部署** | **维持 15.0**；WebGPU 渐进（Safari/系统 26+ 才真用上） |
+| **暂缓** | 广告 SDK、完整 CI；Capacitor WebGPU 可用性 **真机跟踪** |
 
 ---
 

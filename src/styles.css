@@ -190,10 +190,32 @@ body.native-app #phone-frame {
   pointer-events: auto;
 }
 
+/* 最上方：当前 GPU 后端（WebGPU / WebGL） */
+.hud-gpu {
+  position: absolute;
+  top: max(6px, calc(env(safe-area-inset-top, 0px) + 2px));
+  left: 12px;
+  right: 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #4a6a8a;
+  line-height: 1.3;
+  pointer-events: none;
+  z-index: 3;
+}
+.hud-gpu[data-backend='webgpu'] {
+  color: #2d7a4f;
+}
+.hud-gpu[data-backend='webgl'] {
+  color: #8a6a3a;
+}
+
 .hud-level {
   position: absolute;
-  /* full-bleed board: keep title under Dynamic Island */
-  top: max(10px, calc(env(safe-area-inset-top, 0px) + 4px));
+  /* below gpu label; keep under Dynamic Island */
+  top: max(22px, calc(env(safe-area-inset-top, 0px) + 16px));
   left: 12px;
   right: 12px;
   text-align: center;
@@ -206,7 +228,7 @@ body.native-app #phone-frame {
 
 .hud-status {
   position: absolute;
-  top: max(28px, calc(env(safe-area-inset-top, 0px) + 22px));
+  top: max(40px, calc(env(safe-area-inset-top, 0px) + 34px));
   left: 16px;
   right: 16px;
   text-align: center;

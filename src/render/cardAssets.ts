@@ -1,16 +1,13 @@
 import { Texture } from 'pixi.js';
 import type { Rank, Suit } from '../core/types';
 import { CARD_H, CARD_W } from '../data/layout';
+import { isNativeApp } from '../native/haptics';
 
 /**
- * Poker pack:
- *   R_{rank}.png  → hearts (H)
- *   B_{rank}.png  → spades (S)
- *   Card_B.png    → back
- *
- * Clarity: bake each PNG into a canvas at (CARD × device DPR) with
- * high-quality downscale, so GPU samples ~1 texel per framebuffer pixel.
- * Displaying raw 188×248 forced into 56×74 looks soft/muddy.
+ * Poker pack bake pipeline (perf / design 22):
+ * - Cover-resize PNG → design card size × bake resolution
+ * - **Round-rect clip baked into texture** → no per-card GPU mask at runtime
+ * - Shared soft shadow texture (one upload, many Sprites)
  */
 
 const RANKS: Rank[] = [
@@ -29,7 +26,11 @@ const RANKS: Rank[] = [
   'K',
 ];
 
+/** Design-space corner radius (matches CardRenderer rim). */
+export const CARD_CORNER_RADIUS = 8;
+
 export const CARD_BACK_KEY = 'card-back';
+export const CARD_SHADOW_KEY = 'card-shadow';
 
 function filePrefix(suit: Suit): 'R' | 'B' {
   return suit === 'H' ? 'R' : 'B';
@@ -39,7 +40,6 @@ export function faceAssetKey(suit: Suit, rank: Rank): string {
   return `card-face-${suit}-${rank}`;
 }
 
-/** Stable per-session bust so replaced assets reload on full page refresh. */
 const ASSET_VER = String(Date.now());
 
 function faceAssetUrl(suit: Suit, rank: Rank): string {
@@ -49,7 +49,6 @@ function faceAssetUrl(suit: Suit, rank: Rank): string {
 const BACK_URL = `/cards/Card_B.png?v=${ASSET_VER}`;
 
 const textureCache = new Map<string, Texture>();
-/** CPU-side images survive WebGL context loss; GPU textures do not. */
 const imageCache = new Map<string, HTMLImageElement>();
 let loaded = false;
 let bakeResolution = 2;
@@ -76,47 +75,11 @@ function destroyGpuTextures(): void {
   loaded = false;
 }
 
-/**
- * High-quality cover resize into designW×designH at `resolution` buffer scale.
- * Texture logical size = designW×designH (via source.resolution).
- */
-function bakeCardTexture(
-  image: HTMLImageElement,
-  designW: number,
-  designH: number,
+function textureFromCanvas(
+  canvas: HTMLCanvasElement,
   resolution: number,
 ): Texture {
-  const pixelW = Math.max(1, Math.round(designW * resolution));
-  const pixelH = Math.max(1, Math.round(designH * resolution));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = pixelW;
-  canvas.height = pixelH;
-  // Prefer sRGB so baked colors match Preview / design tools
-  const ctx =
-    canvas.getContext('2d', { alpha: true, colorSpace: 'srgb' } as CanvasRenderingContext2DSettings) ??
-    canvas.getContext('2d', { alpha: true });
-  if (!ctx) {
-    return Texture.from(image);
-  }
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.clearRect(0, 0, pixelW, pixelH);
-
-  const iw = image.naturalWidth || image.width;
-  const ih = image.naturalHeight || image.height;
-  // cover
-  const scale = Math.max(pixelW / iw, pixelH / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const ox = (pixelW - dw) / 2;
-  const oy = (pixelH - dh) / 2;
-  ctx.drawImage(image, ox, oy, dw, dh);
-
-  // resolution makes logical size = pixel/resolution = designW×designH
-  // skipCache=true so each card gets its own texture entry
-  const texture = Texture.from(
+  return Texture.from(
     {
       resource: canvas,
       resolution,
@@ -125,7 +88,99 @@ function bakeCardTexture(
     },
     true,
   );
-  return texture;
+}
+
+/**
+ * Cover-fit image into designW×designH, clipped to rounded rect (pre-multiplied alpha).
+ * Eliminates runtime `sprite.mask` batch breaks on WebGPU/WebGL.
+ */
+function bakeCardTexture(
+  image: HTMLImageElement,
+  designW: number,
+  designH: number,
+  resolution: number,
+  cornerRadiusDesign: number,
+): Texture {
+  const pixelW = Math.max(1, Math.round(designW * resolution));
+  const pixelH = Math.max(1, Math.round(designH * resolution));
+  const rPx = Math.max(1, cornerRadiusDesign * resolution);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = pixelW;
+  canvas.height = pixelH;
+  const ctx =
+    canvas.getContext('2d', {
+      alpha: true,
+      colorSpace: 'srgb',
+    } as CanvasRenderingContext2DSettings) ??
+    canvas.getContext('2d', { alpha: true });
+  if (!ctx) {
+    return Texture.from(image);
+  }
+
+  ctx.clearRect(0, 0, pixelW, pixelH);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // Clip to card silhouette before drawing art
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(0, 0, pixelW, pixelH, rPx);
+  } else {
+    // Fallback path for older WebViews
+    const r = Math.min(rPx, pixelW / 2, pixelH / 2);
+    ctx.moveTo(r, 0);
+    ctx.arcTo(pixelW, 0, pixelW, pixelH, r);
+    ctx.arcTo(pixelW, pixelH, 0, pixelH, r);
+    ctx.arcTo(0, pixelH, 0, 0, r);
+    ctx.arcTo(0, 0, pixelW, 0, r);
+    ctx.closePath();
+  }
+  ctx.clip();
+
+  const iw = image.naturalWidth || image.width;
+  const ih = image.naturalHeight || image.height;
+  const scale = Math.max(pixelW / iw, pixelH / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const ox = (pixelW - dw) / 2;
+  const oy = (pixelH - dh) / 2;
+  ctx.drawImage(image, ox, oy, dw, dh);
+
+  return textureFromCanvas(canvas, resolution);
+}
+
+/** Soft rounded drop-shadow plate (logical CARD_W×CARD_H, alpha in tex). */
+function bakeShadowTexture(resolution: number): Texture {
+  const designW = CARD_W;
+  const designH = CARD_H;
+  const pixelW = Math.max(1, Math.round(designW * resolution));
+  const pixelH = Math.max(1, Math.round(designH * resolution));
+  const rPx = Math.max(1, CARD_CORNER_RADIUS * resolution);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = pixelW;
+  canvas.height = pixelH;
+  const ctx = canvas.getContext('2d', { alpha: true });
+  if (!ctx) return Texture.WHITE;
+
+  ctx.clearRect(0, 0, pixelW, pixelH);
+  ctx.fillStyle = 'rgba(44, 53, 64, 1)';
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(0, 0, pixelW, pixelH, rPx);
+  } else {
+    const r = Math.min(rPx, pixelW / 2, pixelH / 2);
+    ctx.moveTo(r, 0);
+    ctx.arcTo(pixelW, 0, pixelW, pixelH, r);
+    ctx.arcTo(pixelW, pixelH, 0, pixelH, r);
+    ctx.arcTo(0, pixelH, 0, 0, r);
+    ctx.arcTo(0, 0, pixelW, 0, r);
+    ctx.closePath();
+  }
+  ctx.fill();
+
+  return textureFromCanvas(canvas, resolution);
 }
 
 function assetJobs(): { key: string; url: string }[] {
@@ -145,13 +200,12 @@ function assetJobs(): { key: string; url: string }[] {
 
 /**
  * Load HTML images (CPU) + bake GPU textures.
- * Idempotent while `loaded`; use `reloadCardFaceAssets` after GL context loss.
+ * Idempotent while `loaded`; use `reloadCardFaceAssets` after GPU loss.
  */
 export async function loadCardFaceAssets(): Promise<void> {
   if (loaded) return;
 
-  // Always bake at 3× design pixels (56×74 → 168×222).
-  bakeResolution = 3;
+  bakeResolution = isNativeApp() ? 2 : 3;
   const jobs = assetJobs();
 
   await Promise.all(
@@ -161,18 +215,21 @@ export async function loadCardFaceAssets(): Promise<void> {
         img = await loadHtmlImage(url);
         imageCache.set(key, img);
       }
-      const tex = bakeCardTexture(img, CARD_W, CARD_H, bakeResolution);
+      const tex = bakeCardTexture(
+        img,
+        CARD_W,
+        CARD_H,
+        bakeResolution,
+        CARD_CORNER_RADIUS,
+      );
       textureCache.set(key, tex);
     }),
   );
 
+  textureCache.set(CARD_SHADOW_KEY, bakeShadowTexture(bakeResolution));
   loaded = true;
 }
 
-/**
- * Design 19: after WebGL context loss, GPU textures are dead.
- * Drop them and re-bake from CPU image cache (no network if warm).
- */
 export async function reloadCardFaceAssets(): Promise<void> {
   destroyGpuTextures();
   await loadCardFaceAssets();
@@ -197,11 +254,20 @@ export function getBackTexture(): Texture {
   return tex;
 }
 
+/** Shared rounded soft shadow (tint/alpha applied on Sprite). */
+export function getShadowTexture(): Texture {
+  const tex = textureCache.get(CARD_SHADOW_KEY);
+  if (!tex) {
+    console.warn(`[cardAssets] missing texture ${CARD_SHADOW_KEY}`);
+    return Texture.WHITE;
+  }
+  return tex;
+}
+
 export function cardAssetsReady(): boolean {
   return loaded;
 }
 
-/** Bake resolution used (for debug). */
 export function getCardBakeResolution(): number {
   return bakeResolution;
 }

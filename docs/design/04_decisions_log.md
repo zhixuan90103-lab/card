@@ -34,7 +34,8 @@
 | D26 | **残局 trimSurplusDeck** | 桌上已不需要的同色同点从 stock/waste 成对回收 |
 | **D27** | **公平钥匙几何** | 禁止跨锁埋钥（A 锁堆内不得放 B 锁钥匙）；钥匙在独立可挖位；玩家两钥互消=可归因误用；**hard 禁止不可清 density 兜底**（H1b 落实） |
 | **D27b** | **Near-miss 发局偏好** | 稀缺硬门槛仍 2～4，**优先 3～4**；前半贪心 stall 前 ≥3 对；轻量 polish 选优（见 `changelog/2026-07-22_near_miss_p0.md`） |
-| **D28** | **渲染生命周期：视图可丢弃 · 状态为权威** | 后台回前台 **禁止** soft re-render；**必须** `GameView.rehydrate(state)`（新 WebGL + 重烘焙贴图 + bootstrap + **rebind 指针**）；信号源含 Capacitor `appStateChange`；全文 `design/19_ios_renderer_lifecycle.md` |
+| **D28** | **渲染生命周期：视图可丢弃 · 状态为权威** | 后台回前台 **禁止** soft re-render；**必须** `GameView.rehydrate(state)`（**新 GPU 视图** WebGL 或 WebGPU + 重烘焙贴图 + bootstrap + **rebind 指针**）；信号：`appStateChange` / visibility + **`webglcontextlost` / `device.lost`**；全文 `design/19` |
+| **D29** | **渲染后端：优先 WebGPU，回退 WebGL**（工程 D-WG1b） | 默认 `preference: ['webgpu','webgl']`（**禁止 canvas 玩家路径**）；`?renderer=webgl\|webgpu\|auto` / `localStorage.card_renderer`；**P-iOS=维持部署 15**，WebGPU 为渐进增强；Capacitor 真机以回退稳为准；计划 `20` · 检索 `21` v2 · R3 `20_webgpu_r3_findings` |
 | D12 | 无默认 timer | 体验红线 |
 | D13 | 第一版 **不对玩家做钥匙特殊规则** | 内部可标关卡瓶颈 |
 | D14 | 调研文档沉淀于 `research/sorting-market/` | NotebookLM 已入库 |

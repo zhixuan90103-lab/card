@@ -45,7 +45,7 @@ npm run build
 npm run cap:ios  # 真机：build + sync + 开 Xcode
 ```
 
-技术硬约束：PixiJS **8.19.x** · **393×852** · 逻辑 hit-test · `core/` 零 Pixi · **D28** 后台整视图 rehydrate。
+技术硬约束：PixiJS **8.19.x** · **393×852** · 逻辑 hit-test · `core/` 零 Pixi · **D28** 后台 rehydrate · **D29** 优先 WebGPU / 回退 WebGL（`?renderer=webgl` 可强制）。
 
 ## 目录结构
 

@@ -35,11 +35,13 @@ npm run cap:ios               # 打包 = build + sync + 开 Xcode
 |------|------|
 | 规则 | `src/core/` |
 | 渲染 / 手感 | `src/render/cards.ts` · `phys.ts` |
-| **视图生命周期** | `src/render/gameView.ts` · `src/native/appLifecycle.ts`（**D28**） |
+| **GPU（整局）** | `src/render/gpu/` **WebGPU-first**（D29）；回退 WebGL；`?renderer=webgl` 可强制 |
+| **视图生命周期** | `src/render/gameView.ts` · `src/native/appLifecycle.ts`（**D28**；device.lost / context lost） |
 | 贴图 | `src/render/cardAssets.ts`（CPU 缓存 + GPU 重烘焙） |
 | 布局运行时 | `src/data/*Runtime.ts` |
 | 输入 | `src/main.ts`（pointer · dropMatch · **rehydrate 后 rebind**） |
 | 调参（仅桌面） | `src/ui/trayTuner.ts` |
+| WebGPU | **D29** 默认 **WebGPU→WebGL**；[`20` 结案 v0.6](./design/20_webgpu_research_plan.md) · [R3 实测](./design/20_webgpu_r3_findings.md)；`?renderer=webgl` 回滚；**Capacitor 真机跟踪** |
 
 ### 2.1 后台恢复（D28）
 

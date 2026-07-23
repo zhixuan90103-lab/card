@@ -27,6 +27,8 @@ export type HudSyncOpts = {
   canUndo: boolean;
   /** 顶栏：第 N 局 · 锁 · seed */
   levelName: string;
+  /** 当前 GPU 后端：webgpu | webgl | … */
+  gpuBackend?: string;
   teachHint?: string;
   softTip?: string | null;
   hardDead?: boolean;
@@ -36,6 +38,8 @@ export class Hud {
   private stockLabel: HTMLElement;
   private statusLabel: HTMLElement;
   private levelLabel: HTMLElement;
+  /** 最上方：当前 WebGPU / WebGL */
+  private gpuLabel: HTMLElement;
   private tipLabel: HTMLElement;
   private winOverlay: HTMLElement;
   private deadOverlay: HTMLElement;
@@ -71,6 +75,10 @@ export class Hud {
     const restartBtn = mkBtn('重开', handlers.onRestart, 'restart');
     const newRunBtn = mkBtn('新局', handlers.onNewRun, 'new');
     bar.append(drawBtn, this.undoBtn, restartBtn, newRunBtn);
+
+    this.gpuLabel = document.createElement('div');
+    this.gpuLabel.className = 'hud-gpu';
+    this.gpuLabel.textContent = '渲染：…';
 
     this.levelLabel = document.createElement('div');
     this.levelLabel.className = 'hud-level';
@@ -128,6 +136,7 @@ export class Hud {
     this.deadOverlay.append(deadCard);
 
     host.append(
+      this.gpuLabel,
       this.levelLabel,
       this.statusLabel,
       this.stockLabel,
@@ -138,6 +147,26 @@ export class Hud {
     );
 
     this.layoutPiles();
+  }
+
+  /** 顶栏显示当前渲染后端（WebGPU / WebGL） */
+  setGpuBackend(backend?: string | null): void {
+    const raw = (backend ?? document.documentElement.dataset.gpuBackend ?? '')
+      .trim()
+      .toLowerCase();
+    if (raw === 'webgpu') {
+      this.gpuLabel.textContent = '当前渲染：WebGPU';
+      this.gpuLabel.dataset.backend = 'webgpu';
+    } else if (raw === 'webgl') {
+      this.gpuLabel.textContent = '当前渲染：WebGL';
+      this.gpuLabel.dataset.backend = 'webgl';
+    } else if (raw) {
+      this.gpuLabel.textContent = `当前渲染：${raw}`;
+      this.gpuLabel.dataset.backend = raw;
+    } else {
+      this.gpuLabel.textContent = '当前渲染：…';
+      delete this.gpuLabel.dataset.backend;
+    }
   }
 
   /** Reposition stock count after draw-zone tuner moves piles. */
@@ -172,6 +201,7 @@ export class Hud {
     this.undoBtn.disabled = !opts.canUndo;
 
     this.levelLabel.textContent = opts.levelName;
+    this.setGpuBackend(opts.gpuBackend);
 
     if (state.status === 'won') {
       this.winOverlay.style.display = 'flex';

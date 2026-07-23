@@ -4,7 +4,7 @@ export const DESIGN_HEIGHT = 852;
 
 /**
  * FX bleed around design so match exit / drag / flip aren't clipped by
- * the WebGL canvas edge. Layout & pickCard stay in 0..DESIGN_*.
+ * the GPU canvas edge (WebGPU-first / WebGL fallback). Layout & pickCard stay in 0..DESIGN_*.
  * World is offset by (FX_PAD_X, FX_PAD_Y) inside a larger renderer buffer.
  */
 export const FX_PAD_X = 96;

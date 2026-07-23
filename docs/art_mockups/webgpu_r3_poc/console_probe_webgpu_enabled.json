@@ -1,0 +1,14 @@
+[
+  {
+    "label": "A_default_prefer",
+    "backend": "[pixi] backend= webgpu choice= webgpu source= default preference= [webgpu, webgl]"
+  },
+  {
+    "label": "B_force_webgl",
+    "backend": "[pixi] backend= webgl choice= webgl source= query preference= [webgl]"
+  },
+  {
+    "label": "C_force_webgpu",
+    "backend": "[pixi] backend= webgpu choice= webgpu source= query preference= [webgpu, webgl]"
+  }
+]

@@ -1,0 +1,65 @@
+[
+  {
+    "label": "default_webgpu_prefer",
+    "url": "http://127.0.0.1:4173/",
+    "backendLine": "[pixi] backend= webgl choice= webgpu source= default preference= [webgpu, webgl]",
+    "cardLine": "[card-mvp] single-infinite run 1 hard seed 2274689402 locks 2 backend webgl",
+    "hasGpu": true,
+    "adapterOk": false,
+    "canvasInfo": {
+      "w": 1280,
+      "h": 2827,
+      "cssW": "639.914px",
+      "cssH": "1413.28px"
+    },
+    "err": null,
+    "relevantLogs": [
+      "[pixi] backend= webgl choice= webgpu source= default preference= [webgpu, webgl]",
+      "[card-mvp] single-infinite run 1 hard seed 2274689402 locks 2 backend webgl",
+      "[.WebGL-0x12c004d0000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "[.WebGL-0x12c004dc000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    ]
+  },
+  {
+    "label": "force_webgl",
+    "url": "http://127.0.0.1:4173/?renderer=webgl",
+    "backendLine": "[pixi] backend= webgl choice= webgl source= query preference= [webgl]",
+    "cardLine": "[card-mvp] single-infinite run 1 hard seed 3437929047 locks 1 backend webgl",
+    "hasGpu": true,
+    "adapterOk": false,
+    "canvasInfo": {
+      "w": 1280,
+      "h": 2827,
+      "cssW": "639.914px",
+      "cssH": "1413.28px"
+    },
+    "err": null,
+    "relevantLogs": [
+      "[pixi] backend= webgl choice= webgl source= query preference= [webgl]",
+      "[card-mvp] single-infinite run 1 hard seed 3437929047 locks 1 backend webgl",
+      "[.WebGL-0x13400490600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "[.WebGL-0x1340049c000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    ]
+  },
+  {
+    "label": "force_webgpu",
+    "url": "http://127.0.0.1:4173/?renderer=webgpu",
+    "backendLine": "[pixi] backend= webgl choice= webgpu source= query preference= [webgpu, webgl]",
+    "cardLine": "[card-mvp] single-infinite run 1 hard seed 3641184982 locks 2 backend webgl",
+    "hasGpu": true,
+    "adapterOk": false,
+    "canvasInfo": {
+      "w": 1280,
+      "h": 2827,
+      "cssW": "639.914px",
+      "cssH": "1413.28px"
+    },
+    "err": null,
+    "relevantLogs": [
+      "[pixi] backend= webgl choice= webgpu source= query preference= [webgpu, webgl]",
+      "[card-mvp] single-infinite run 1 hard seed 3641184982 locks 2 backend webgl",
+      "[.WebGL-0x10c00490600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "[.WebGL-0x10c0049a200]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    ]
+  }
+]

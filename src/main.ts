@@ -81,6 +81,9 @@ async function main(): Promise<void> {
     document.body.classList.add('native-app');
   }
 
+  // D29: WebGPU-first everywhere; mobile uses no-MSAA + resize debounce (design/22)
+  console.info('[card] render policy: WebGPU-first (D29)');
+
   /** 单关无限：局号 + seed；第 3/6/9… 局极难 */
   let runIndex = 1;
   let run: RunDeal = startNewRun(undefined, difficultyForRun(1));
@@ -94,11 +97,15 @@ async function main(): Promise<void> {
   syncPileRects(session);
 
   /**
-   * D28 / design 19: view is disposable.
-   * `cards` / `app` / `canvas` rebind after every rehydrate.
-   * Pointer listeners always attach to the *current* canvas.
+   * D28: view is disposable; GPU lost + resume → full rehydrate.
+   * Entire board / trays / juice share one WebGPU-first Application.
    */
-  let view = await GameView.mount(session.getState());
+  let onGpuLost: () => void = () => {
+    console.warn('[lifecycle] GPU lost before handler bound');
+  };
+  let view = await GameView.mount(session.getState(), {
+    onContextLost: () => onGpuLost(),
+  });
   let cards = view.cards;
   let app = view.app;
   let canvas = view.canvas;
@@ -170,6 +177,7 @@ async function main(): Promise<void> {
     hud.sync(st, {
       canUndo: session.canUndo(),
       levelName: formatRunTitle(run.meta, runIndex),
+      gpuBackend: view.backend,
       teachHint: level.teachHint,
       softTip: softTipText(st),
       hardDead: hard,
@@ -753,7 +761,7 @@ async function main(): Promise<void> {
     }
   };
 
-  /** Pointer must re-bind after every rehydrate (new WebGL canvas). */
+  /** Pointer must re-bind after every rehydrate (new GPU canvas / backend). */
   let unbindPointer: (() => void) | null = null;
   const bindPointer = (el: HTMLCanvasElement) => {
     unbindPointer?.();
@@ -776,8 +784,8 @@ async function main(): Promise<void> {
   /**
    * D28 / design 19 — renderer lifecycle:
    * suspend → stop ticker; drop in-flight drag; never trust GPU
-   * resume  → FULL rehydrate (new WebGL + textures + CardRenderer) + rebind input
-   * Soft re-render is forbidden after context loss.
+   * resume / GPU lost → FULL rehydrate (WebGPU-first Application + textures) + rebind
+   * Soft re-render forbidden (D28).
    */
   let resumeBusy = false;
   let resumeQueued = false;
@@ -787,7 +795,14 @@ async function main(): Promise<void> {
     bindPointer(canvas);
     applyShellLayout();
     activeDrag = null;
+    // Sync sprites + HUD onto the *new* CardRenderer / canvas
     refresh();
+    try {
+      app.ticker.start();
+      app.renderer.render(app.stage);
+    } catch (e) {
+      console.warn('[lifecycle] post-rehydrate render', e);
+    }
   };
 
   const runResumeRehydrate = () => {
@@ -801,13 +816,17 @@ async function main(): Promise<void> {
     resumeQueued = false;
     void (async () => {
       try {
+        // One frame for shell / VV after appState active (reduces 0×0 frame race)
+        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+        applyShellLayout();
         syncPileRects(session);
         await view.rehydrate(session.getState());
         afterRehydrate();
       } catch (e) {
         console.error('[lifecycle] rehydrate failed', e);
         try {
-          await new Promise((r) => setTimeout(r, 120));
+          await new Promise((r) => setTimeout(r, 200));
+          applyShellLayout();
           await view.rehydrate(session.getState());
           afterRehydrate();
         } catch (e2) {
@@ -821,6 +840,11 @@ async function main(): Promise<void> {
         }
       }
     })();
+  };
+
+  onGpuLost = () => {
+    // Same path as resume: tear down + rebuild (device.lost / webglcontextlost)
+    runResumeRehydrate();
   };
 
   const lifecycle = watchAppLifecycle({
@@ -851,6 +875,9 @@ async function main(): Promise<void> {
     run.meta.seed,
     'locks',
     run.meta.lockCount,
+    'gpu',
+    view.backend,
+    view.prefersWebGpu ? 'policy=webgpu-first' : 'policy=webgl-forced',
   );
 }
 

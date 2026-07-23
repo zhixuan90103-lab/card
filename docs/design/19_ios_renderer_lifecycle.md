@@ -19,11 +19,12 @@ App **进后台再回前台** → 只剩米色背景，**牌与 WebGL 层 UI 空
 
 | 层 | 事实 | 错误做法 | 正确做法 |
 |----|------|----------|----------|
-| iOS WKWebView | 后台常 **丢失 WebGL context** | 假定 context 可恢复 | **不信任** 旧 Application |
-| GPU 资源 | 贴图 / program / FBO 失效 | `ticker.start()` + `render` 补帧 | **销毁并重建** 视图 |
+| iOS WKWebView | 后台常 **丢失 WebGL context**；WebGPU 则 **device lost / 画布失效** | 假定 context 可恢复 | **不信任** 旧 Application |
+| GPU 资源 | 贴图 / program / FBO（或 WebGPU 等价物）失效 | `ticker.start()` + `render` 补帧 | **销毁并重建** 视图 |
 | 贴图缓存 | CPU `Image` 可留，GPU `Texture` 不可留 | 继续用旧 `Texture` | `reloadCardFaceAssets()` 重烘焙 |
 | 输入 | `canvas` 是 DOM 节点，随 Application 新建 | 指针监听绑一次旧 canvas | **rehydrate 后 rebind** |
 | 生命周期信号 | 仅 `visibilitychange` 在原生不可靠 | 只听 document | **Capacitor `appStateChange` + visibility + pageshow** |
+| GPU 丢失信号 | WebGL：`webglcontextlost`；WebGPU：`GPUDevice.lost`（非 `destroyed`） | 只处理一种 | **两者合流 → 同一 rehydrate**（D29） |
 | 视口 | 后台 `visualViewport` 可 0×0 | 写入 0 把 frame 缩没 | `shellLayout` 保留 lastGood，resume 再量 |
 
 ### 0.3 设计原则（强制）
@@ -32,12 +33,13 @@ App **进后台再回前台** → 只剩米色背景，**牌与 WebGL 层 UI 空
 GameState / GameSession     = 唯一权威（跨 suspend 存活，可序列化）
 Pixi Application + 贴图
   + CardRenderer + PileTray = 易失视图（可随时销毁，无会话语义）
+后端偏好（D29）             = 优先 WebGPU，回退 WebGL；禁止 canvas 玩家路径
 
-suspend  → 停 ticker；丢弃进行中的 drag；不读写 GL
-resume   → rehydrate(state)：
+suspend  → 停 ticker；丢弃进行中的 drag；不读写 GPU
+resume / GPU lost → rehydrate(state)：
              tearDown GPU
            → reload GPU textures from CPU cache
-           → createPixiApp()
+           → createPixiApp()   // 再走 preference 链
            → bootstrap(state)
            → rebind pointer
            → refresh HUD
@@ -168,5 +170,6 @@ refresh()              // sync 牌 + HUD
 ## 6. 非目标
 
 - 不在此做局内状态持久化到 disk（可后续另开设计）  
-- 不双引擎、不 WebGPU 回退  
+- 不双引擎（Three+Pixi 同屏）；**允许** Pixi 内 WebGPU/WebGL 偏好切换（**D29**）  
 - 不做 Android 验收（产品仍 iPhone-only）  
+- **不做** Canvas2D 渲染器作为玩家回退（D29 / I7）
