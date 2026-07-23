@@ -2,59 +2,51 @@
  * Root layout for game shell (#letterbox + #phone-frame).
  *
  * Desktop: CSS letterbox is fine.
- * Native (Capacitor iOS/Android): CSS 100dvh / safe-area / contentInset fight
- * and stretch 393×852 non-uniformly. We size the frame in JS with **uniform
- * contain** so the Pixi world never squashes, and the letterbox fills the
- * true visual viewport with felt cream (no system black strips).
+ * Native: JS uniform contain of 393×852 against full visualViewport.
+ * Guard: ignore 0×0 viewport while backgrounded (iOS reports empty VV).
  */
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from './design';
 import { isNativeApp } from '../native/haptics';
 
 export type ShellMetrics = {
-  /** Letterbox CSS px (full usable viewport) */
   shellW: number;
   shellH: number;
-  /** Phone-frame CSS px (uniform 393:852) */
   frameW: number;
   frameH: number;
-  /** frame / design uniform scale */
   scale: number;
 };
 
+let lastGood: ShellMetrics = {
+  shellW: DESIGN_WIDTH,
+  shellH: DESIGN_HEIGHT,
+  frameW: DESIGN_WIDTH,
+  frameH: DESIGN_HEIGHT,
+  scale: 1,
+};
+
 function readViewportSize(): { w: number; h: number } {
-  // visualViewport is the ground truth inside WKWebView after insets
   const vv = window.visualViewport;
-  if (vv && vv.width > 0 && vv.height > 0) {
+  if (vv && vv.width > 2 && vv.height > 2) {
     return { w: vv.width, h: vv.height };
   }
-  return {
-    w: window.innerWidth || document.documentElement.clientWidth || DESIGN_WIDTH,
-    h:
-      window.innerHeight ||
-      document.documentElement.clientHeight ||
-      DESIGN_HEIGHT,
-  };
+  const iw = window.innerWidth || document.documentElement.clientWidth || 0;
+  const ih = window.innerHeight || document.documentElement.clientHeight || 0;
+  if (iw > 2 && ih > 2) return { w: iw, h: ih };
+  // Background / transitional: keep last good so frame doesn't collapse to 0
+  return { w: lastGood.shellW, h: lastGood.shellH };
 }
 
 /**
- * Apply shell geometry. Safe to call every resize.
- * On non-native, clears inline sizes so CSS desktop rules apply.
+ * Apply shell geometry. Safe to call every resize / resume.
  */
 export function applyShellLayout(): ShellMetrics {
   const letterbox = document.getElementById('letterbox');
   const frame = document.getElementById('phone-frame');
   if (!letterbox || !frame) {
-    return {
-      shellW: DESIGN_WIDTH,
-      shellH: DESIGN_HEIGHT,
-      frameW: DESIGN_WIDTH,
-      frameH: DESIGN_HEIGHT,
-      scale: 1,
-    };
+    return lastGood;
   }
 
   if (!isNativeApp()) {
-    // Desktop / mobile browser: let CSS own layout
     letterbox.style.width = '';
     letterbox.style.height = '';
     letterbox.style.padding = '';
@@ -63,21 +55,27 @@ export function applyShellLayout(): ShellMetrics {
     frame.style.maxWidth = '';
     frame.style.maxHeight = '';
     const r = frame.getBoundingClientRect();
-    const scale = Math.min(
-      r.width / DESIGN_WIDTH || 1,
-      r.height / DESIGN_HEIGHT || 1,
-    );
-    return {
-      shellW: letterbox.getBoundingClientRect().width,
-      shellH: letterbox.getBoundingClientRect().height,
-      frameW: r.width,
-      frameH: r.height,
-      scale,
-    };
+    if (r.width > 2 && r.height > 2) {
+      const scale = Math.min(
+        r.width / DESIGN_WIDTH || 1,
+        r.height / DESIGN_HEIGHT || 1,
+      );
+      lastGood = {
+        shellW: letterbox.getBoundingClientRect().width || lastGood.shellW,
+        shellH: letterbox.getBoundingClientRect().height || lastGood.shellH,
+        frameW: r.width,
+        frameH: r.height,
+        scale,
+      };
+    }
+    return lastGood;
   }
 
   const { w, h } = readViewportSize();
-  // Full-bleed shell — cream covers entire WebView (including island / home bar)
+  if (w < 2 || h < 2) {
+    return lastGood;
+  }
+
   letterbox.style.boxSizing = 'border-box';
   letterbox.style.width = `${w}px`;
   letterbox.style.height = `${h}px`;
@@ -87,13 +85,7 @@ export function applyShellLayout(): ShellMetrics {
   letterbox.style.alignItems = 'center';
   letterbox.style.justifyContent = 'center';
 
-  /**
-   * iPhone product choice: maximize board size.
-   * Do NOT subtract full safe-area from the game frame (that left large cream
-   * bands on 15 Pro). Scale 393×852 with uniform contain against the **full**
-   * visualViewport; HUD uses env(safe-area-inset-*) so text/buttons stay clear
-   * of Dynamic Island and Home Indicator.
-   */
+  // Full-viewport contain (HUD owns safe-area, not the board scale)
   const scale = Math.min(w / DESIGN_WIDTH, h / DESIGN_HEIGHT);
   const frameW = DESIGN_WIDTH * scale;
   const frameH = DESIGN_HEIGHT * scale;
@@ -106,7 +98,12 @@ export function applyShellLayout(): ShellMetrics {
   frame.style.borderRadius = '0';
   frame.style.boxShadow = 'none';
 
-  return { shellW: w, shellH: h, frameW, frameH, scale };
+  lastGood = { shellW: w, shellH: h, frameW, frameH, scale };
+  return lastGood;
+}
+
+export function getLastShellMetrics(): ShellMetrics {
+  return lastGood;
 }
 
 /** Subscribe to viewport changes; returns dispose. */
@@ -117,7 +114,8 @@ export function watchShellLayout(onChange: (m: ShellMetrics) => void): () => voi
   window.visualViewport?.addEventListener('resize', run);
   window.visualViewport?.addEventListener('scroll', run);
   window.addEventListener('orientationchange', run);
-  // iOS sometimes settles insets one frame late
+  window.addEventListener('pageshow', run);
+  window.addEventListener('focus', run);
   requestAnimationFrame(run);
   setTimeout(run, 100);
   setTimeout(run, 400);
@@ -126,5 +124,7 @@ export function watchShellLayout(onChange: (m: ShellMetrics) => void): () => voi
     window.visualViewport?.removeEventListener('resize', run);
     window.visualViewport?.removeEventListener('scroll', run);
     window.removeEventListener('orientationchange', run);
+    window.removeEventListener('pageshow', run);
+    window.removeEventListener('focus', run);
   };
 }

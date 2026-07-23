@@ -16,17 +16,17 @@ export type PixiBundle = {
   app: Application;
   world: Container;
   resize: () => void;
+  /** Call when app returns from background (iOS WebGL blank fix) */
+  resume: () => void;
   destroy: () => void;
 };
 
 /**
  * Mount Pixi into #game-canvas.
  *
- * Layout contract:
- * - #phone-frame = design 393×852 (hit-test / HUD)
- * - Renderer = BUFFER (design + FX pads) so exit throws aren't clipped
- * - `world` offset by FX_PAD so cards still use design coordinates
- * - Canvas CSS is larger than the frame and centered (overflow visible)
+ * Layout: #phone-frame = 393×852; renderer = design + FX pads.
+ * Resume: iOS often clears GL buffer or reports 0×0 VV while backgrounded —
+ * `resume()` re-layouts, restarts ticker, and force-renders.
  */
 export async function createPixiApp(): Promise<PixiBundle> {
   applyShellLayout();
@@ -35,13 +35,11 @@ export async function createPixiApp(): Promise<PixiBundle> {
   const frame = getPhoneFrameEl();
   const app = new Application();
 
-  /** Uniform scale from layout frame (not buffer) → design */
   const layoutScale = (): number => {
     const r = frame.getBoundingClientRect();
-    return Math.max(
-      Math.min(r.width / DESIGN_WIDTH, r.height / DESIGN_HEIGHT),
-      1e-6,
-    );
+    const w = r.width > 2 ? r.width : DESIGN_WIDTH;
+    const h = r.height > 2 ? r.height : DESIGN_HEIGHT;
+    return Math.max(Math.min(w / DESIGN_WIDTH, h / DESIGN_HEIGHT), 1e-6);
   };
 
   const frameResolution = (): number => {
@@ -52,12 +50,13 @@ export async function createPixiApp(): Promise<PixiBundle> {
   await app.init({
     width: BUFFER_WIDTH,
     height: BUFFER_HEIGHT,
-    // Transparent outside design so letterbox cream shows through FX margins
     backgroundAlpha: 0,
     antialias: true,
     resolution: frameResolution(),
     autoDensity: true,
     preference: 'webgl',
+    // Keep last frame when possible (helps some GPUs after brief suspend)
+    powerPreference: 'high-performance',
     canvas: undefined,
   });
 
@@ -69,7 +68,6 @@ export async function createPixiApp(): Promise<PixiBundle> {
   canvas.style.touchAction = 'none';
   canvas.style.imageRendering = 'auto';
 
-  // Felt under design rect only (FX margins stay transparent)
   const stageBg = new Graphics();
   stageBg.label = 'design-bg';
   stageBg.rect(FX_PAD_X, FX_PAD_Y, DESIGN_WIDTH, DESIGN_HEIGHT);
@@ -84,12 +82,18 @@ export async function createPixiApp(): Promise<PixiBundle> {
   const resize = () => {
     applyShellLayout();
     const r = frame.getBoundingClientRect();
+    // Skip collapsing resize while backgrounded (0-size frame)
+    if (r.width < 2 || r.height < 2) return;
+
     const scale = layoutScale();
     const nextRes = frameResolution();
-    app.renderer.resolution = nextRes;
-    app.renderer.resize(BUFFER_WIDTH, BUFFER_HEIGHT);
+    try {
+      app.renderer.resolution = nextRes;
+      app.renderer.resize(BUFFER_WIDTH, BUFFER_HEIGHT);
+    } catch (e) {
+      console.warn('[pixi] resize failed', e);
+    }
 
-    // Canvas covers design + FX bleed, centered on the layout frame
     const cssW = BUFFER_WIDTH * scale;
     const cssH = BUFFER_HEIGHT * scale;
     canvas.style.width = `${cssW}px`;
@@ -100,6 +104,39 @@ export async function createPixiApp(): Promise<PixiBundle> {
     host.style.width = '100%';
     host.style.height = '100%';
     host.style.overflow = 'visible';
+  };
+
+  const forceRender = () => {
+    try {
+      // Ensure ticker not stuck stopped mid-frame
+      if (!app.ticker.started) app.ticker.start();
+      app.renderer.render(app.stage);
+    } catch (e) {
+      console.warn('[pixi] forceRender failed', e);
+    }
+  };
+
+  /** Full recovery path after background / context restore */
+  const resume = () => {
+    applyShellLayout();
+    resize();
+    forceRender();
+    requestAnimationFrame(() => {
+      applyShellLayout();
+      resize();
+      forceRender();
+    });
+    // iOS often settles viewport a beat later
+    setTimeout(() => {
+      applyShellLayout();
+      resize();
+      forceRender();
+    }, 50);
+    setTimeout(() => {
+      applyShellLayout();
+      resize();
+      forceRender();
+    }, 250);
   };
 
   resize();
@@ -113,8 +150,8 @@ export async function createPixiApp(): Promise<PixiBundle> {
     console.warn('[pixi] WebGL context lost');
   });
   canvas.addEventListener('webglcontextrestored', () => {
-    console.warn('[pixi] WebGL context restored');
-    resize();
+    console.warn('[pixi] WebGL context restored — full resume');
+    resume();
   });
 
   const destroy = () => {
@@ -122,5 +159,5 @@ export async function createPixiApp(): Promise<PixiBundle> {
     app.destroy(true, { children: true });
   };
 
-  return { app, world, resize, destroy };
+  return { app, world, resize, resume, destroy };
 }

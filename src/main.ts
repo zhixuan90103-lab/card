@@ -94,15 +94,8 @@ async function main(): Promise<void> {
 
   syncPileRects(session);
 
-  const { app, world, destroy } = await createPixiApp();
+  const { app, world, resume, destroy } = await createPixiApp();
   await loadCardFaceAssets();
-
-  // iOS: pause ticker when backgrounded (battery / freezes mid-animation)
-  const onVisibility = () => {
-    if (document.hidden) app.ticker.stop();
-    else app.ticker.start();
-  };
-  document.addEventListener('visibilitychange', onVisibility);
 
   // Tray under draw piles, then cards on top
   const pileTray = new PileTray();
@@ -185,6 +178,48 @@ async function main(): Promise<void> {
     cards.syncSelectIdle(st, app.ticker);
     refreshHud();
   };
+
+  /**
+   * iOS WKWebView: after background, GL buffer / viewport often blank or 0×0.
+   * Resume shell + force render + re-sync sprites (textures still in CPU cache).
+   */
+  const resumeFromBackground = () => {
+    try {
+      app.ticker.start();
+    } catch {
+      /* ignore */
+    }
+    resume();
+    refresh();
+    requestAnimationFrame(() => {
+      resume();
+      refresh();
+    });
+    setTimeout(() => {
+      resume();
+      refresh();
+    }, 100);
+    setTimeout(() => {
+      resume();
+      refresh();
+    }, 300);
+  };
+
+  const onVisibility = () => {
+    if (document.hidden) {
+      // Pause animations only — do not collapse layout to 0
+      try {
+        app.ticker.stop();
+      } catch {
+        /* ignore */
+      }
+    } else {
+      resumeFromBackground();
+    }
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pageshow', resumeFromBackground);
+  window.addEventListener('focus', resumeFromBackground);
 
   /**
    * Physical clear: meet → exitPairShared → flip newly free (14 S2/S3).
@@ -767,7 +802,12 @@ async function main(): Promise<void> {
   );
 
   if (import.meta.hot) {
-    import.meta.hot.dispose(() => destroy());
+    import.meta.hot.dispose(() => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', resumeFromBackground);
+      window.removeEventListener('focus', resumeFromBackground);
+      destroy();
+    });
   }
 
   console.info(

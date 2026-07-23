@@ -105,6 +105,7 @@ POC/实现认序：L-IT-19 → L-IT-18 → L-IT-17 → 代码 rules/main/phys
 | **L-IT-15** | `research/handfeel/15_drag_intent_research_plan.md` | 检索计划 v0.3（检索关） |
 | **L-IT-16** | `research/handfeel/16_drag_intent_gap_audit.md` | 计划反查补漏 |
 | **L-IT-CL** | `docs/changelog/2026-07-23_drag_intent_drop_decode.md` | 实现纪要 changelog |
+| **L-SESS-BUG** | `docs/changelog/2026-07-23_session_bugs_and_fixes.md` | 全日问题/Bug/调整总表 |
 | **L-CODE-R** | `src/core/rules.ts` | `pickCard` · `dropMatchTarget` |
 | **L-CODE-M** | `src/main.ts` | 松手多探针 + origin/vel |
 | **L-CODE-P** | `src/render/phys.ts` | 意图相关 PHYS |

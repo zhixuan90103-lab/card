@@ -1,6 +1,6 @@
 # 项目文档索引
 
-**更新：** 2026-07-23（抽牌区整理 / CARD_Z / 自动抽动画 / 蒙黑；见 handfeel v1.5 changelog）
+**更新：** 2026-07-23（问题总表 + 拖意图 + 抽叠 + 谜题默认 Y=190）
 
 > **新窗口开工（规则/实现）：** [`HANDOFF_IMPLEMENTATION.md`](./HANDOFF_IMPLEMENTATION.md) → [`design/13`](./design/13_mvp_plan_and_todolist.md)  
 > **新窗口开工（美术+体验）：** [`HANDOFF_ART_UX.md`](./HANDOFF_ART_UX.md)  
@@ -45,6 +45,7 @@
 | [research/handfeel/19_intent_impl_pins.md](./research/handfeel/19_intent_impl_pins.md) | **意图实现钉（已落地）** |
 | [research/handfeel/20_intent_effective_sources_list.md](./research/handfeel/20_intent_effective_sources_list.md) | **意图轨有效源 List v1** |
 | [changelog/2026-07-23_drag_intent_drop_decode.md](./changelog/2026-07-23_drag_intent_drop_decode.md) | 拖消松手解码 / 少选错 |
+| [changelog/2026-07-23_session_bugs_and_fixes.md](./changelog/2026-07-23_session_bugs_and_fixes.md) | **问题/Bug 与调整总表** |
 | [changelog/2026-07-23_match_exit_feel.md](./changelog/2026-07-23_match_exit_feel.md) | 配对飞出/跨侧 | |
 | [changelog/2026-07-23_drag_handfeel.md](./changelog/2026-07-23_drag_handfeel.md) | 拖拽/牌心 | |
 | [changelog/2026-07-23_tap_meet_select.md](./changelog/2026-07-23_tap_meet_select.md) | 点选飞入/抛角/选中 | |
