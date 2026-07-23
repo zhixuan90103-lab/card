@@ -346,12 +346,9 @@ async function main(): Promise<void> {
     const before = session.getState();
     const stockBefore = before.stock.length + before.waste.length;
     const willRecycle = before.stock.length === 0 && before.waste.length > 0;
-    const wasteIdsBefore = willRecycle ? [...before.waste] : [];
 
-    const { drew, recycled } = session.draw();
-    if (!drew && !recycled) return;
-
-    if (drew) {
+    const finish = () => refresh();
+    const noteDraw = () => {
       drawsWithoutMatch += 1;
       const st = session.getState();
       if (
@@ -360,23 +357,36 @@ async function main(): Promise<void> {
       ) {
         softTipShown = true;
       }
-    }
+    };
 
-    cards.clearHints();
-    syncPileRects(session);
-    const st = session.getState();
+    // Recycle path: ALL waste → stock (anim) → pause → then draw first card
+    // so waste is empty during pause (no leftover card in 叠牌区)
+    if (willRecycle) {
+      const { recycled } = session.draw({ phase: 'recycleOnly' });
+      if (!recycled) return;
 
-    const finish = () => refresh();
-
-    if (recycled && wasteIdsBefore.length > 0) {
-      // Logic already: waste shuffled into stock, one card drawn to waste top
-      const stockIds = [...st.stock];
-      const wasteTop = st.waste[st.waste.length - 1];
-      cards.sync(st, wasteTop ? [wasteTop] : []);
+      cards.clearHints();
+      syncPileRects(session);
+      const st = session.getState();
+      const stockIds = [...st.stock]; // all recycled cards, waste empty
+      cards.sync(st, stockIds);
       refreshHud();
       cards.playRecycleSettle(stockIds, st, () => {
-        if (wasteTop && drew) {
-          cards.playDrawMoveFlip(wasteTop, session.getState(), finish, app.ticker);
+        // After all at stock + pause: draw one; avoid full sync thrash (卡顿)
+        const { drew } = session.draw({ phase: 'drawOnly' });
+        if (!drew) {
+          finish();
+          return;
+        }
+        noteDraw();
+        syncPileRects(session);
+        const after = session.getState();
+        const wasteTop = after.waste[after.waste.length - 1];
+        if (wasteTop) {
+          // Skip flyer + remaining stock — compact anim handles new peeks (no jump)
+          cards.sync(after, after.stock.concat(wasteTop));
+          refreshHud();
+          cards.playDrawMoveFlip(wasteTop, after, finish, app.ticker);
         } else {
           finish();
         }
@@ -384,10 +394,20 @@ async function main(): Promise<void> {
       return;
     }
 
+    const { drew, recycled } = session.draw();
+    if (!drew && !recycled) return;
+
+    if (drew) noteDraw();
+
+    cards.clearHints();
+    syncPileRects(session);
+    const st = session.getState();
+
     if (drew) {
       const wasteTop = st.waste[st.waste.length - 1];
       if (wasteTop) {
-        cards.sync(st, [wasteTop]);
+        // Skip wasteTop + stock so compact can ease from current peeks
+        cards.sync(st, st.stock.concat(wasteTop));
         refreshHud();
         cards.playDrawMoveFlip(wasteTop, st, finish, app.ticker);
         return;
@@ -434,6 +454,8 @@ async function main(): Promise<void> {
     syncPileRects(session);
     const id = pickCard(session.getState(), p);
     if (id) {
+      // Flipping cards must not be dragged; exiting matched pair not pickable
+      if (cards.isFlipping(id) || cards.isExiting(id)) return;
       const home = cards.getHomePosition(session.getState(), id);
       if (!home) return;
       activeDrag = {
@@ -536,6 +558,8 @@ async function main(): Promise<void> {
     let targetId =
       pickCard(st, { x: dropX, y: dropY }, { excludeId: drag.id }) ??
       pickCard(st, p, { excludeId: drag.id });
+    // Cannot drop-match onto a card that is flipping
+    if (targetId && cards.isFlipping(targetId)) targetId = null;
     const a = st.cards[drag.id];
     const b = targetId ? st.cards[targetId] : null;
 

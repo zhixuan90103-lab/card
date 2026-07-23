@@ -95,15 +95,51 @@ export const PHYS = {
   /** Snap-back rotation wobble (cycles of cos while settling) */
   snapRotWobble: 2.4,
   drawMoveMs: 150,
+  /** After drawing stock top, remaining stack slides into new peeks (ms) */
+  stockCompactMs: 90,
+  /** Random Z tilt peak during stock→waste slide (deg); settles 0 at end */
+  drawTiltMaxDeg: 10,
+  /**
+   * Draw slide ends past waste by this many design px (no pull-back before flip).
+   * After flip, short settle to exact waste seat.
+   */
+  drawOvershootPx: 10,
+  /** Settle from overshoot → waste after flip (ms) */
+  drawSettleMs: 80,
   drawFlipMs: 160,
+  /**
+   * Draw-flip hinge as ratio of card width (0.5=center).
+   * >0.5 = slightly right of center; free edge left → reads 从右向左翻.
+   */
+  drawFlipHingeX: 0.68,
+  /** Peak scale during draw-zone flip (larger than puzzle reveal) */
+  drawFlipBreath: 1.42,
   flipMs: 180,
-  /** Peak uniform scale during flip */
+  /** Peak uniform scale during general flip (new free etc.) */
   flipBreath: 1.3,
   /** Max random Z tilt during flip (deg); settles to 0 at end */
   flipTiltMaxDeg: 8,
+  /** Dark overlay peak alpha on waste cards under a flipping card */
+  flipUnderDimAlpha: 0.1,
+  /** Dim fade-in duration (ms) at flip start */
+  flipUnderDimFadeMs: 60,
+  /** @deprecated recycle no longer does parallel face-down first */
   recBackMs: 120,
-  recGapMs: 40,
-  recCapMs: 700,
+  /** Gap after one card finishes before next starts (ms); 0 = tight sequential */
+  recGapMs: 0,
+  /**
+   * Per-card fly+flip to stock frame (ms).
+   * Tuned so ~8 cards sequential ≈ 0.3s wall clock.
+   */
+  recMoveMs: 28,
+  /** Frame → left stack peek (ms) */
+  recStackMs: 12,
+  /** Soft budget for recycle anim wall clock (~0.3s) */
+  recCapMs: 300,
+  /** Pause after recycle settle before drawing first card to waste (ms) */
+  recPauseBeforeDrawMs: 50,
+  /** Random Z tilt peak during recycle fly (deg); settles 0 at frame */
+  recTiltMaxDeg: 14,
   dragThreshold: 8,
   /** drag drop: skip meet if centers closer than this (design px) */
   meetSkipDist: 24,
@@ -133,6 +169,19 @@ export type TickerLike = {
 
 export function easeOutQuad(u: number): number {
   return 1 - (1 - u) * (1 - u);
+}
+
+/**
+ * Ease-out with small overshoot then settle to 1.
+ * @param s back strength (CSS default ~1.7; use ~0.9–1.1 for subtle)
+ */
+export function easeOutBack(u: number, s: number = 1.0): number {
+  if (u <= 0) return 0;
+  if (u >= 1) return 1;
+  const c1 = s;
+  const c3 = c1 + 1;
+  const t = u - 1;
+  return 1 + c3 * t * t * t + c1 * t * t;
 }
 
 export function easeInOutSmooth(u: number): number {

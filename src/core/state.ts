@@ -291,26 +291,48 @@ export class GameSession {
    * 玩家点抽牌区：stock 顶 → waste 顶（覆盖当前抽出叠顶）。
    * 若 stock 空且 waste 非空 → 洗回 stock 再抽。
    * 两边皆空 → no-op。
+   *
+   * phase:
+   * - full（默认）：洗回（若需要）+ 抽一张
+   * - recycleOnly：只洗回，waste 清空；供动画「全部回库后再停顿再抽」
+   * - drawOnly：只从 stock 抽一张（不写新 history，接在 recycleOnly 之后）
    */
-  draw(): { drew: boolean; recycled: boolean } {
+  draw(opts?: {
+    phase?: 'full' | 'recycleOnly' | 'drawOnly';
+  }): { drew: boolean; recycled: boolean } {
     if (this.state.status === 'won') return { drew: false, recycled: false };
+    const phase = opts?.phase ?? 'full';
 
-    this.pushHistory();
+    if (phase !== 'drawOnly') {
+      this.pushHistory();
+    }
     const next = cloneState(this.state);
     let recycled = false;
 
-    if (next.stock.length === 0) {
-      if (next.waste.length === 0) {
-        // undo empty push
+    if (phase === 'recycleOnly' || phase === 'full') {
+      if (next.stock.length === 0) {
+        if (next.waste.length === 0) {
+          this.history.pop();
+          return { drew: false, recycled: false };
+        }
+        this.recycleWaste(next);
+        recycled = true;
+      }
+    }
+
+    if (phase === 'recycleOnly') {
+      if (!recycled) {
         this.history.pop();
         return { drew: false, recycled: false };
       }
-      this.recycleWaste(next);
-      recycled = true;
+      next.selectedId = null;
+      this.commit(next);
+      return { drew: false, recycled: true };
     }
 
+    // full | drawOnly → flip one stock → waste
     if (next.stock.length === 0) {
-      this.history.pop();
+      if (phase === 'full') this.history.pop();
       return { drew: false, recycled };
     }
 

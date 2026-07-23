@@ -6,6 +6,7 @@ import { CARD_H, CARD_W, STOCK_STACK_MAX_VISIBLE } from '../data/layout';
 import { getCardShadowParams } from '../data/cardShadowRuntime';
 import {
   getStockRect,
+  getStockStackDx,
   getWasteRect,
   stockStackOffset,
 } from '../data/pileLayoutRuntime';
@@ -33,6 +34,8 @@ type CardView = {
   cardMask: Graphics;
   /** Selection / subtle rim */
   frame: Graphics;
+  /** Darken overlay when another card flips on top of stack */
+  dim: Graphics;
   cardId: CardId;
   baseY: number;
 };
@@ -54,9 +57,14 @@ export type CardPose = {
 export class CardRenderer {
   readonly root = new Container();
   private views = new Map<CardId, CardView>();
-  /** meet / exit / snap / draw-move / recycle — isBusy */
+  /** meet / snap / draw-move / recycle — isBusy (blocks new input) */
   private animating = new Set<CardId>();
-  /** flip / draw-flip — NOT busy */
+  /**
+   * Pair flying off after match — NOT busy (input free once 上抛 starts).
+   * Still skipped by sync so !alive cards stay visible mid-flight.
+   */
+  private exiting = new Set<CardId>();
+  /** flip / draw-flip — NOT busy, but card itself not draggable */
   private flipping = new Set<CardId>();
   private drawMoving = false;
   private recycleAnimating = false;
@@ -144,6 +152,12 @@ export class CardRenderer {
   /** Empty stock / waste placeholders (same size as a card) */
   private stockSlot = new Graphics();
   private wasteSlot = new Graphics();
+  /**
+   * Stock plate/shadow footprint peeks: locked to peak this deal
+   * (empty ghost frame uses this width; does not shrink as cards drawn).
+   * Reset only on bootstrap / new run.
+   */
+  private stockFootprintPeakVis = 0;
 
   constructor() {
     this.root.label = 'cards';
@@ -172,6 +186,7 @@ export class CardRenderer {
       this.root.removeChild(view.root);
     }
     this.views.clear();
+    this.stockFootprintPeakVis = 0;
     for (const card of Object.values(state.cards)) {
       const view = this.makeView(card);
       this.views.set(card.id, view);
@@ -201,12 +216,11 @@ export class CardRenderer {
     });
   }
 
-  private hideSlot(g: Graphics): void {
-    g.clear();
-    g.visible = false;
-  }
-
-  /** Permanent seat shadows for stock + waste (same params as card shadow). */
+  /**
+   * Shared seat drop-shadow under stock/waste piles.
+   * Base rect = stack footprint; applies card-shadow offset/scale/alpha once
+   * (not per-card).
+   */
   private paintSeatShadow(g: Graphics, x: number, y: number, w: number, h: number): void {
     g.clear();
     g.visible = true;
@@ -220,55 +234,92 @@ export class CardRenderer {
     g.fill({ color: 0x2c3540, alpha });
   }
 
-  private syncPileSeatShadows(): void {
-    const stock = getStockRect();
-    const waste = getWasteRect();
-    this.paintSeatShadow(
-      this.stockSeatShadow,
-      stock.x,
-      stock.y,
-      stock.w,
-      stock.h,
-    );
-    this.paintSeatShadow(
-      this.wasteSeatShadow,
-      waste.x,
-      waste.y,
-      waste.w,
-      waste.h,
-    );
+  /** Update peak visible stock count for plate width (never shrink mid-deal). */
+  private noteStockFootprint(state: GameState): void {
+    const n = state.stock.length;
+    if (n <= 0) return;
+    const cur = Math.min(n, STOCK_STACK_MAX_VISIBLE);
+    this.stockFootprintPeakVis = Math.max(this.stockFootprintPeakVis, cur);
   }
 
-  private syncEmptySlots(state: GameState): void {
-    // Seat shadows first — always on for stock + waste
-    this.syncPileSeatShadows();
+  /**
+   * Left-expanded stock rect for `vis` cards (peek stack).
+   * `vis` 0 → single-card seat (empty); otherwise min(vis, max visible).
+   */
+  private stockFootprintForVis(
+    stock: { x: number; y: number; w: number; h: number },
+    vis: number,
+  ): { x: number; y: number; w: number; h: number } {
+    const n = Math.max(1, Math.min(Math.max(0, vis), STOCK_STACK_MAX_VISIBLE));
+    const peeks = Math.max(0, n - 1);
+    const peekPx = Math.abs(getStockStackDx());
+    return {
+      x: stock.x - peeks * peekPx,
+      y: stock.y,
+      w: stock.w + peeks * peekPx,
+      h: stock.h,
+    };
+  }
 
+  /** Plate uses peak width this deal (does not shrink as cards drawn). */
+  private stockPlateFootprint(stock: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }): { x: number; y: number; w: number; h: number } {
+    return this.stockFootprintForVis(stock, Math.max(this.stockFootprintPeakVis, 1));
+  }
+
+  /**
+   * Shared stock/waste shadows — only while the pile has cards.
+   * Stock width tracks current visible count (grows & shrinks).
+   */
+  private syncPileSeatShadows(state: GameState): void {
+    this.noteStockFootprint(state);
     const stock = getStockRect();
     const waste = getWasteRect();
 
-    if (state.stock.length === 0) {
-      this.paintEmptySlot(
-        this.stockSlot,
-        stock.x,
-        stock.y,
-        stock.w,
-        stock.h,
+    if (state.stock.length > 0) {
+      const stockVis = Math.min(state.stock.length, STOCK_STACK_MAX_VISIBLE);
+      const stockFp = this.stockFootprintForVis(stock, stockVis);
+      this.paintSeatShadow(
+        this.stockSeatShadow,
+        stockFp.x,
+        stockFp.y,
+        stockFp.w,
+        stockFp.h,
       );
     } else {
-      this.hideSlot(this.stockSlot);
+      this.stockSeatShadow.clear();
+      this.stockSeatShadow.visible = false;
     }
 
-    if (state.waste.length === 0) {
-      this.paintEmptySlot(
-        this.wasteSlot,
+    if (state.waste.length > 0) {
+      this.paintSeatShadow(
+        this.wasteSeatShadow,
         waste.x,
         waste.y,
         waste.w,
         waste.h,
       );
     } else {
-      this.hideSlot(this.wasteSlot);
+      this.wasteSeatShadow.clear();
+      this.wasteSeatShadow.visible = false;
     }
+  }
+
+  private syncEmptySlots(state: GameState): void {
+    // Shared seat shadows first (width tracks live stock count)
+    this.syncPileSeatShadows(state);
+
+    const stock = getStockRect();
+    const waste = getWasteRect();
+
+    // Always show seat plates (with or without cards)
+    const plateFp = this.stockPlateFootprint(stock);
+    this.paintEmptySlot(this.stockSlot, plateFp.x, plateFp.y, plateFp.w, plateFp.h);
+    this.paintEmptySlot(this.wasteSlot, waste.x, waste.y, waste.w, waste.h);
   }
 
   private makeView(card: Card): CardView {
@@ -286,8 +337,11 @@ export class CardRenderer {
     back.mask = cardMask;
     face.mask = cardMask;
     const frame = new Graphics();
+    const dim = new Graphics();
+    dim.visible = false;
+    dim.eventMode = 'none';
 
-    root.addChild(shadow, back, face, cardMask, frame);
+    root.addChild(shadow, back, face, cardMask, frame, dim);
     return {
       root,
       shadow,
@@ -295,9 +349,29 @@ export class CardRenderer {
       face,
       cardMask,
       frame,
+      dim,
       cardId: card.id,
       baseY: 0,
     };
+  }
+
+  /** Dim geometry with fill alpha 1; fade via dim.alpha */
+  private ensureCardDimShape(view: CardView): void {
+    view.dim.clear();
+    view.dim.roundRect(0, 0, CARD_W, CARD_H, RADIUS);
+    view.dim.fill({ color: 0x000000, alpha: 1 });
+    view.dim.visible = true;
+  }
+
+  private setCardDim(view: CardView, on: boolean, alpha?: number): void {
+    if (!on) {
+      view.dim.clear();
+      view.dim.alpha = 1;
+      view.dim.visible = false;
+      return;
+    }
+    this.ensureCardDimShape(view);
+    view.dim.alpha = alpha ?? PHYS.flipUnderDimAlpha;
   }
 
   /**
@@ -1062,6 +1136,8 @@ export class CardRenderer {
           approachNx = fdx / flen;
           approachNy = fdy / flen;
         }
+        // Release input lock before exit (上抛) — exit uses `exiting`, not busy
+        for (const id of orderedIds) this.animating.delete(id);
         const carry = orderedIds.map((cid) => ({
           id: cid,
           vx: 0,
@@ -1131,7 +1207,11 @@ export class CardRenderer {
     });
     const views = raw.map((r) => r.view);
     const orderedIds = raw.map((r) => r.id);
-    for (const id of orderedIds) this.animating.add(id);
+    // Exit does NOT block input (product: 上抛开始即可操作下一张)
+    for (const id of orderedIds) {
+      this.animating.delete(id);
+      this.exiting.add(id);
+    }
 
     const carryById = new Map((carry ?? []).map((c) => [c.id, c] as const));
     const blend = fromMeet ? PHYS.exitResidualBlend : 0;
@@ -1279,7 +1359,7 @@ export class CardRenderer {
       });
       if (allOff || t >= hardMs) {
         ticker.remove(tick);
-        for (const id of orderedIds) this.animating.delete(id);
+        for (const id of orderedIds) this.exiting.delete(id);
         for (const b of bodies) {
           b.view.root.visible = false;
           b.view.root.alpha = 1;
@@ -1294,8 +1374,9 @@ export class CardRenderer {
   }
 
   /**
-   * P-flip / draw-flip: scale.x fake flip + breath + slight random Z tilt (NOT busy).
-   * Rotation about card center (product convention).
+   * P-flip: scale.x fake flip + breath + slight random Z tilt (NOT busy).
+   * Never use negative scale.x (mirrors art). Rightish hinge = 从右向左观感.
+   * Face is shown only after scale is near 0; orientation is corrected first.
    */
   flipToFace(
     ids: CardId[],
@@ -1303,25 +1384,40 @@ export class CardRenderer {
     onDone: () => void,
     ticker: TickerLike,
     toFace: boolean = true,
+    opts?: {
+      /** 0–1 along card width; default 0.5 center; draw uses ~0.68 */
+      hingeXRatio?: number;
+      /** Peak breath scale; default PHYS.flipBreath; draw uses drawFlipBreath */
+      breathPeak?: number;
+    },
   ): void {
     const list = ids.slice(0, 12);
+    const hingeXRatio = opts?.hingeXRatio ?? 0.5;
+    const breathPeak = opts?.breathPeak ?? PHYS.flipBreath;
     const targets: {
       id: CardId;
       view: CardView;
       card: Card;
-      /** peak random Z tilt (rad), unique per card */
       tiltPeak: number;
+      pivotX: number;
+      pivotY: number;
     }[] = [];
     for (const id of list) {
       const view = this.views.get(id);
       const card = state.cards[id];
       if (!view || !card) continue;
-      // Random angle: ±(40%–100%) of max, random sign
       const amp =
         ((PHYS.flipTiltMaxDeg * Math.PI) / 180) *
         (0.4 + Math.random() * 0.6);
       const tiltPeak = (Math.random() < 0.5 ? -1 : 1) * amp;
-      targets.push({ id, view, card, tiltPeak });
+      targets.push({
+        id,
+        view,
+        card,
+        tiltPeak,
+        pivotX: CARD_W * hingeXRatio,
+        pivotY: CARD_H / 2,
+      });
     }
     if (targets.length === 0) {
       onDone();
@@ -1329,19 +1425,40 @@ export class CardRenderer {
     }
     const w = CARD_W;
     const h = CARD_H;
-    for (const { id, view, card } of targets) {
+    const flipIds = new Set(targets.map((t) => t.id));
+    // Dim waste cards under flip — fade in (not instant)
+    const dimmed: CardView[] = [];
+    for (const wid of state.waste) {
+      if (flipIds.has(wid)) continue;
+      const v = this.views.get(wid);
+      if (!v || !v.root.visible) continue;
+      this.ensureCardDimShape(v);
+      v.dim.alpha = 0;
+      dimmed.push(v);
+    }
+    const dimPeak = PHYS.flipUnderDimAlpha;
+    const dimFadeMs = Math.max(1, PHYS.flipUnderDimFadeMs);
+    const clearDim = () => {
+      for (const v of dimmed) this.setCardDim(v, false);
+    };
+
+    for (const { id, view, card, pivotX, pivotY } of targets) {
       this.flipping.add(id);
       if (toFace) this.showBack(view, w, h);
       else this.showFace(view, card, w, h, false);
-      // Center pivot for flip + tilt
+      // Hinge fixed in world when changing pivot
       const c = this.viewCenterOf(view);
-      view.root.pivot.set(w / 2, h / 2);
-      view.root.x = c.x;
-      view.root.y = c.y;
+      const hingeWorldX = c.x + (pivotX - w / 2);
+      const hingeWorldY = c.y + (pivotY - h / 2);
+      view.root.pivot.set(pivotX, pivotY);
+      view.root.x = hingeWorldX;
+      view.root.y = hingeWorldY;
       view.root.scale.set(1, 1);
       view.root.alpha = 1;
       view.root.visible = true;
       view.root.rotation = 0;
+      // Flipping card above dimmed stack
+      view.root.zIndex = Math.max(view.root.zIndex, 5600);
     }
     let t = 0;
     const duration = PHYS.flipMs;
@@ -1350,25 +1467,35 @@ export class CardRenderer {
     const tick = (arg: { deltaMS: number }) => {
       t += arg.deltaMS;
       const u = Math.min(1, t / duration);
+      // Under-stack dim: ease-in over flipUnderDimFadeMs
+      if (dimmed.length > 0) {
+        const du = Math.min(1, t / dimFadeMs);
+        const da = easeOutQuad(du) * dimPeak;
+        for (const v of dimmed) v.dim.alpha = da;
+      }
       let sx: number;
       let breath: number;
       if (u < 0.5) {
         const p = easeInOutSmooth(u / 0.5);
+        // Collapse toward hinge (rightish → free edge swings in)
         sx = 1 - p * (1 - edge);
-        breath = 1 + (PHYS.flipBreath - 1) * p;
+        breath = 1 + (breathPeak - 1) * p;
       } else {
         if (!swapped) {
           swapped = true;
+          // Before face shows: force upright scale sign + clean orientation
           for (const { view, card } of targets) {
+            view.root.scale.set(edge, view.root.scale.y || 1);
+            // Keep mid-tilt continuous; face art itself is never mirrored
             if (toFace) this.showFace(view, card, w, h, false);
             else this.showBack(view, w, h);
           }
         }
         const p = easeInOutSmooth((u - 0.5) / 0.5);
+        // Always expand with positive scale.x — correct face, no mirror
         sx = edge + p * (1 - edge);
-        breath = PHYS.flipBreath + (1 - PHYS.flipBreath) * p;
+        breath = breathPeak + (1 - breathPeak) * p;
       }
-      // Z tilt peaks mid-flip (sin), settles 0 — slight random angle per card
       const tiltShape = Math.sin(Math.PI * u);
       for (const { view, tiltPeak } of targets) {
         view.root.scale.set(sx * breath, breath);
@@ -1376,13 +1503,13 @@ export class CardRenderer {
       }
       if (u >= 1) {
         ticker.remove(tick);
-        for (const { id, view } of targets) {
+        clearDim();
+        for (const { id, view, pivotX, pivotY } of targets) {
           this.flipping.delete(id);
           view.root.scale.set(1, 1);
           view.root.rotation = 0;
-          // Restore top-left layout pivot
-          view.root.x -= w / 2;
-          view.root.y -= h / 2;
+          view.root.x -= pivotX;
+          view.root.y -= pivotY;
           view.root.pivot.set(0, 0);
         }
         onDone();
@@ -1391,7 +1518,72 @@ export class CardRenderer {
     ticker.add(tick);
   }
 
-  /** Draw: fly from stock rect to waste then flip face. */
+  /**
+   * After stock top is drawn: remaining cards ease into new stack offsets
+   * (no teleport / jump toward deal seat).
+   */
+  playStockCompact(state: GameState, ticker: TickerLike): void {
+    const stock = getStockRect();
+    const n = state.stock.length;
+    if (n === 0) return;
+    const dur = Math.max(40, PHYS.stockCompactMs);
+    for (let i = 0; i < n; i++) {
+      const id = state.stock[i]!;
+      if (this.exiting.has(id) || this.flipping.has(id)) continue;
+      const view = this.views.get(id);
+      const card = state.cards[id];
+      if (!view || !card?.alive) continue;
+      // Visual top-left now (pivot-aware)
+      const c = this.viewCenterOf(view);
+      const startX = c.x - this.cardHx;
+      const startY = c.y - this.cardHy;
+      const off = stockStackOffset(Math.min(i, STOCK_STACK_MAX_VISIBLE - 1));
+      const endX = stock.x + off.x;
+      const endY = stock.y + off.y;
+      if (Math.hypot(endX - startX, endY - startY) < 0.5) {
+        this.placeRestTopLeft(view, endX, endY, {
+          scale: 1,
+          zIndex: 50 + (n - i),
+        });
+        this.showBack(view, CARD_W, CARD_H, { shadow: false });
+        continue;
+      }
+      this.animating.add(id);
+      view.root.visible = i < STOCK_STACK_MAX_VISIBLE;
+      this.showBack(view, CARD_W, CARD_H, { shadow: false });
+      // Animate in top-left space, pivot 0
+      view.root.pivot.set(0, 0);
+      view.root.x = startX;
+      view.root.y = startY;
+      view.root.scale.set(1);
+      view.root.rotation = 0;
+      view.root.zIndex = 50 + (n - i);
+      let t = 0;
+      const tick = (arg: { deltaMS: number }) => {
+        t += arg.deltaMS;
+        const u = Math.min(1, t / dur);
+        const e = easeOutQuad(u);
+        view.root.x = startX + (endX - startX) * e;
+        view.root.y = startY + (endY - startY) * e;
+        if (u >= 1) {
+          ticker.remove(tick);
+          this.animating.delete(id);
+          this.placeRestTopLeft(view, endX, endY, {
+            scale: 1,
+            zIndex: 50 + (n - i),
+          });
+          if (i >= STOCK_STACK_MAX_VISIBLE) view.root.visible = false;
+        }
+      };
+      ticker.add(tick);
+    }
+  }
+
+  /**
+   * Draw: stock → past waste (small overshoot) → flip there → settle to waste.
+   * Horizontal only, ease-out (fast then slow). Random Z tilt settles by flip end.
+   * Remaining stock compact in parallel (no seat jump).
+   */
   playDrawMoveFlip(
     id: CardId,
     state: GameState,
@@ -1404,45 +1596,111 @@ export class CardRenderer {
       onDone();
       return;
     }
-    const stock = getStockRect();
     const waste = getWasteRect();
+    this.recycleAnimating = false;
     this.drawMoving = true;
     this.animating.add(id);
+    // Compact remaining stock seats smoothly while this card flies out
+    this.playStockCompact(state, ticker);
+    const hx = this.cardHx;
+    const hy = this.cardHy;
+    // Start from **current** visual center (after recycle seat) — no snap to frame
+    const cur = this.viewCenterOf(view);
+    const x0 = cur.x;
+    const y0 = cur.y;
+    const xWaste = waste.x + hx;
+    const yWaste = waste.y + hy;
+    const dir = Math.sign(xWaste - x0) || 1;
+    // End slide past waste — flip here, do NOT pull back first
+    const xOver = xWaste + dir * PHYS.drawOvershootPx;
+    // Random tilt: ±(40%–100%) of max
+    const tiltAmp =
+      ((PHYS.drawTiltMaxDeg * Math.PI) / 180) *
+      (0.4 + Math.random() * 0.6);
+    const tiltPeak = (Math.random() < 0.5 ? -1 : 1) * tiltAmp;
+
     view.root.visible = true;
-    view.root.x = stock.x;
-    view.root.y = stock.y;
+    view.root.pivot.set(hx, hy);
+    view.root.x = x0;
+    view.root.y = y0;
     view.root.zIndex = 5500;
     view.root.alpha = 1;
     view.root.scale.set(1);
     view.root.rotation = 0;
     this.showBack(view, CARD_W, CARD_H, { shadow: true });
+
+    const settleToWaste = () => {
+      // After flip: pivot is top-left; ease into exact waste seat
+      // Keep busy until settle completes (product: 落稳后才可再抽)
+      this.animating.add(id);
+      this.drawMoving = true;
+      const sx = view.root.x;
+      const sy = view.root.y;
+      const sRot = view.root.rotation;
+      let ts = 0;
+      const settleMs = Math.max(16, PHYS.drawSettleMs);
+      const tickSettle = (arg: { deltaMS: number }) => {
+        ts += arg.deltaMS;
+        const u = Math.min(1, ts / settleMs);
+        const e = easeOutQuad(u);
+        view.root.x = sx + (waste.x - sx) * e;
+        view.root.y = sy + (waste.y - sy) * e;
+        view.root.rotation = sRot * (1 - e);
+        if (u >= 1) {
+          ticker.remove(tickSettle);
+          this.animating.delete(id);
+          this.drawMoving = false;
+          view.root.rotation = 0;
+          view.root.pivot.set(0, 0);
+          view.root.x = waste.x;
+          view.root.y = waste.y;
+          onDone();
+        }
+      };
+      ticker.add(tickSettle);
+    };
+
     let t = 0;
     const moveMs = PHYS.drawMoveMs;
     const tickMove = (arg: { deltaMS: number }) => {
       t += arg.deltaMS;
       const u = Math.min(1, t / moveMs);
+      // 先快后慢 → 停在过冲点（不回拉）；y 也可微移到 waste 高度
       const e = easeOutQuad(u);
-      view.root.x = stock.x + (waste.x - stock.x) * e;
-      view.root.y = stock.y + (waste.y - stock.y) * e - 20 * Math.sin(Math.PI * u);
+      view.root.x = x0 + (xOver - x0) * e;
+      view.root.y = y0 + (yWaste - y0) * e;
+      // Tilt mid-slide; nearly flat by overshoot (flip prefers near-zero)
+      view.root.rotation = tiltPeak * Math.sin(Math.PI * u);
       if (u >= 1) {
         ticker.remove(tickMove);
-        this.animating.delete(id);
-        this.drawMoving = false;
-        view.root.x = waste.x;
-        view.root.y = waste.y;
-        this.flipToFace([id], state, onDone, ticker, true);
+        // Stay busy through flip + settle (do not clear drawMoving here)
+        view.root.x = xOver;
+        view.root.y = yWaste;
+        this.flipToFace(
+          [id],
+          state,
+          () => {
+            settleToWaste();
+          },
+          ticker,
+          true,
+          {
+            hingeXRatio: PHYS.drawFlipHingeX,
+            breathPeak: PHYS.drawFlipBreath,
+          },
+        );
       }
     };
     ticker.add(tickMove);
   }
 
   /**
-   * After recycle+draw commit: stagger former waste cards to stock seats as backs,
-   * waste top already handled separately or included.
+   * Recycle: face-up at waste → fly to stock **frame** while flipping to back
+   * → then slide **left** into stack peek. Sequential (deep first, top last).
    */
   playRecycleSettle(
     stockIds: CardId[],
-    _state: GameState,
+    state: GameState,
     onDone: () => void,
     ticker: TickerLike,
   ): void {
@@ -1454,70 +1712,209 @@ export class CardRenderer {
     this.recycleAnimating = true;
     const waste = getWasteRect();
     const stock = getStockRect();
-    const gap = n > 8 ? 20 : PHYS.recGapMs;
     const maxAnimate = n > 16 ? 8 : n;
-    let finished = 0;
-    const total = maxAnimate;
-    const doneOne = () => {
-      finished += 1;
-      if (finished >= total) {
-        this.recycleAnimating = false;
-        // snap rest
-        for (let i = maxAnimate; i < n; i++) {
-          const id = stockIds[i]!;
-          const view = this.views.get(id);
-          if (!view) continue;
-          const off = stockStackOffset(Math.min(i, STOCK_STACK_MAX_VISIBLE - 1));
-          view.root.x = stock.x + off.x;
-          view.root.y = stock.y + off.y;
-          view.root.visible = i < STOCK_STACK_MAX_VISIBLE;
-          this.showBack(view, CARD_W, CARD_H, { shadow: false });
-        }
-        onDone();
-      }
-    };
-    for (let i = 0; i < maxAnimate; i++) {
+    // Keep wall clock ~recCapMs (0.3s): T ≈ k*move + (k-1)*stack
+    const moveMs = Math.min(
+      PHYS.recMoveMs,
+      Math.max(18, Math.floor((PHYS.recCapMs * 0.72) / Math.max(maxAnimate, 1))),
+    );
+    const stackMs = Math.max(8, PHYS.recStackMs);
+    const gap = PHYS.recGapMs;
+    const w = CARD_W;
+    const h = CARD_H;
+    const hx = this.cardHx;
+    const hy = this.cardHy;
+    const edge = 0.06;
+
+    // Place all at waste, face-up, same seat
+    for (let i = 0; i < n; i++) {
       const id = stockIds[i]!;
       const view = this.views.get(id);
-      if (!view) {
-        doneOne();
-        continue;
-      }
+      const card = state.cards[id];
+      if (!view || !card) continue;
       this.animating.add(id);
       view.root.visible = true;
-      view.root.x = waste.x + i * 2;
+      view.root.pivot.set(0, 0);
+      view.root.x = waste.x;
       view.root.y = waste.y;
-      view.root.zIndex = 4000 - i;
+      view.root.zIndex = 3500 + i;
       view.root.alpha = 1;
       view.root.scale.set(1);
-      this.showBack(view, CARD_W, CARD_H, { shadow: true });
-      const off = stockStackOffset(Math.min(i, STOCK_STACK_MAX_VISIBLE - 1));
-      const ex = stock.x + off.x;
-      const ey = stock.y + off.y;
-      const delay = i * gap;
-      const startX = view.root.x;
-      const startY = view.root.y;
-      let t = -delay;
-      const moveMs = Math.min(180, PHYS.recCapMs / Math.max(maxAnimate, 1));
-      const tick = (arg: { deltaMS: number }) => {
-        t += arg.deltaMS;
-        if (t < 0) return;
-        const u = Math.min(1, t / moveMs);
-        const e = easeOutQuad(u);
-        view.root.x = startX + (ex - startX) * e;
-        view.root.y = startY + (ey - startY) * e;
-        if (u >= 1) {
-          ticker.remove(tick);
-          this.animating.delete(id);
-          view.root.x = ex;
-          view.root.y = ey;
-          if (i >= STOCK_STACK_MAX_VISIBLE) view.root.visible = false;
-          this.showBack(view, CARD_W, CARD_H, { shadow: false });
-          doneOne();
+      view.root.rotation = 0;
+      this.showFace(view, card, w, h, false, { shadow: i === n - 1 });
+    }
+
+    // Deep seats first; stock top (i=0) last
+    const order: number[] = [];
+    for (let i = maxAnimate - 1; i >= 0; i--) order.push(i);
+
+    const finishAll = () => {
+      for (let i = maxAnimate; i < n; i++) {
+        const id = stockIds[i]!;
+        const view = this.views.get(id);
+        if (!view) continue;
+        this.animating.delete(id);
+        const off = stockStackOffset(Math.min(i, STOCK_STACK_MAX_VISIBLE - 1));
+        view.root.pivot.set(0, 0);
+        view.root.x = stock.x + off.x;
+        view.root.y = stock.y + off.y;
+        view.root.scale.set(1);
+        view.root.rotation = 0;
+        view.root.visible = i < STOCK_STACK_MAX_VISIBLE;
+        this.showBack(view, w, h, { shadow: false });
+      }
+      // Hold busy for a beat, then continue (keep busy until onDone starts next anim)
+      const pauseMs = PHYS.recPauseBeforeDrawMs;
+      if (pauseMs <= 0) {
+        onDone();
+        // Caller should start draw (busy) before we clear; clear next frame if still set
+        this.recycleAnimating = false;
+        return;
+      }
+      let waited = 0;
+      const tickPause = (arg: { deltaMS: number }) => {
+        waited += arg.deltaMS;
+        if (waited >= pauseMs) {
+          ticker.remove(tickPause);
+          // onDone first so draw can take over busy without a free frame (卡顿)
+          onDone();
+          this.recycleAnimating = false;
         }
       };
-      ticker.add(tick);
-    }
+      ticker.add(tickPause);
+    };
+
+    const nextStep = (step: number) => {
+      if (gap > 0 && step < order.length) {
+        let wait = 0;
+        const tickGap = (a: { deltaMS: number }) => {
+          wait += a.deltaMS;
+          if (wait >= gap) {
+            ticker.remove(tickGap);
+            runStep(step);
+          }
+        };
+        ticker.add(tickGap);
+      } else {
+        runStep(step);
+      }
+    };
+
+    const runStep = (step: number) => {
+      if (step >= order.length) {
+        finishAll();
+        return;
+      }
+      const i = order[step]!;
+      const id = stockIds[i]!;
+      const view = this.views.get(id);
+      const card = state.cards[id];
+      if (!view || !card) {
+        runStep(step + 1);
+        return;
+      }
+
+      const off = stockStackOffset(Math.min(i, STOCK_STACK_MAX_VISIBLE - 1));
+      // Phase 1 end: stock **frame** (no peek)
+      const x0 = waste.x + hx;
+      const y0 = waste.y + hy;
+      const xFrame = stock.x + hx;
+      const yFrame = stock.y + hy;
+      // Phase 2 end: left stack peek
+      const xStack = stock.x + off.x + hx;
+      const yStack = stock.y + off.y + hy;
+
+      this.showFace(view, card, w, h, false, { shadow: true });
+      view.root.pivot.set(hx, hy);
+      view.root.x = x0;
+      view.root.y = y0;
+      view.root.zIndex = 4800;
+      view.root.scale.set(1);
+      view.root.rotation = 0;
+      view.root.visible = true;
+
+      // Random spin while flying (peak mid-path, 0 at frame)
+      const tiltAmp =
+        ((PHYS.recTiltMaxDeg * Math.PI) / 180) *
+        (0.4 + Math.random() * 0.6);
+      const tiltPeak = (Math.random() < 0.5 ? -1 : 1) * tiltAmp;
+
+      // —— Phase 1: waste → stock frame, flip face→back mid-flight ——
+      let t = 0;
+      let swapped = false;
+      const tickFly = (arg: { deltaMS: number }) => {
+        t += arg.deltaMS;
+        const u = Math.min(1, t / moveMs);
+        const e = easeOutQuad(u);
+        view.root.x = x0 + (xFrame - x0) * e;
+        view.root.y = y0 + (yFrame - y0) * e;
+        // Random Z tilt during fly-back
+        view.root.rotation = tiltPeak * Math.sin(Math.PI * u);
+
+        let sx: number;
+        if (u < 0.5) {
+          const p = easeInOutSmooth(u / 0.5);
+          sx = 1 - p * (1 - edge);
+        } else {
+          if (!swapped) {
+            swapped = true;
+            this.showBack(view, w, h, { shadow: true });
+          }
+          const p = easeInOutSmooth((u - 0.5) / 0.5);
+          sx = edge + p * (1 - edge);
+        }
+        view.root.scale.set(sx, 1);
+
+        if (u >= 1) {
+          ticker.remove(tickFly);
+          view.root.x = xFrame;
+          view.root.y = yFrame;
+          view.root.scale.set(1);
+          view.root.rotation = 0;
+          this.showBack(view, w, h, { shadow: true });
+
+          // —— Phase 2: frame → left stack peek ——
+          if (Math.abs(off.x) < 0.5 && Math.abs(off.y) < 0.5) {
+            this.animating.delete(id);
+            view.root.pivot.set(0, 0);
+            view.root.x = stock.x + off.x;
+            view.root.y = stock.y + off.y;
+            view.root.zIndex = 50 + (n - i);
+            if (i >= STOCK_STACK_MAX_VISIBLE) view.root.visible = false;
+            this.showBack(view, w, h, { shadow: false });
+            nextStep(step + 1);
+            return;
+          }
+
+          let ts = 0;
+          const tickStack = (a: { deltaMS: number }) => {
+            ts += a.deltaMS;
+            const u2 = Math.min(1, ts / stackMs);
+            const e2 = easeOutQuad(u2);
+            view.root.x = xFrame + (xStack - xFrame) * e2;
+            view.root.y = yFrame + (yStack - yFrame) * e2;
+            view.root.rotation = 0;
+            if (u2 >= 1) {
+              ticker.remove(tickStack);
+              this.animating.delete(id);
+              view.root.pivot.set(0, 0);
+              view.root.x = stock.x + off.x;
+              view.root.y = stock.y + off.y;
+              view.root.scale.set(1);
+              view.root.rotation = 0;
+              view.root.zIndex = 50 + (n - i);
+              if (i >= STOCK_STACK_MAX_VISIBLE) view.root.visible = false;
+              this.showBack(view, w, h, { shadow: false });
+              nextStep(step + 1);
+            }
+          };
+          ticker.add(tickStack);
+        }
+      };
+      ticker.add(tickFly);
+    };
+
+    runStep(0);
   }
 
   sync(
@@ -1529,7 +1926,12 @@ export class CardRenderer {
     const skip = new Set(skipIds);
     const holdBack = new Set(opts?.holdBackIds ?? []);
     for (const [id, view] of this.views) {
-      if (skip.has(id) || this.animating.has(id) || this.flipping.has(id))
+      if (
+        skip.has(id) ||
+        this.animating.has(id) ||
+        this.exiting.has(id) ||
+        this.flipping.has(id)
+      )
         continue;
       const card = state.cards[id];
       if (!card) {
@@ -1569,13 +1971,12 @@ export class CardRenderer {
           });
         }
 
-        // Seat shadow is permanent under stock; only drag needs per-card shadow
-        const pileShadow = !!drag;
+        // Shared stock seat shadow only; per-card shadow while dragging
         const free = isFree(state, id);
         if (free && idx === 0) {
           const selected = state.selectedId === id && !drag;
           this.showFace(view, card, stock.w, stock.h, selected, {
-            shadow: pileShadow,
+            shadow: !!drag,
           });
           if (selected && !drag) {
             // Selected: scale about card center (same amp as drag)
@@ -1596,10 +1997,17 @@ export class CardRenderer {
         const waste = getWasteRect();
         const top = state.waste[state.waste.length - 1];
         const idx = state.waste.indexOf(id);
-        view.root.visible = id === top;
-        if (id !== top) continue;
+        if (idx < 0) {
+          view.root.visible = false;
+          continue;
+        }
+        // All waste cards visible, same seat (no offset stack) — top has highest z
+        view.root.visible = true;
         view.baseY = waste.y;
         const drag = this.dragPos.get(id);
+        const isTop = id === top;
+        // z: deeper cards lower; top above; drag/selected still on top
+        const baseZ = 500 + idx;
         if (drag) {
           this.placeFromTopLeft(view, drag.x, drag.y, {
             scale: PHYS.dragScale,
@@ -1608,16 +2016,16 @@ export class CardRenderer {
         } else {
           this.placeRestTopLeft(view, waste.x, view.baseY, {
             scale: 1,
-            zIndex: 500 + idx,
+            zIndex: baseZ,
           });
         }
         const free = isFree(state, id);
         const selected = free && state.selectedId === id && !drag;
-        // Permanent waste seat shadow; card shadow only while dragging
+        // Shared waste seat shadow; per-card only while dragging
         this.showFace(view, card, waste.w, waste.h, selected, {
           shadow: !!drag,
         });
-        if (selected && !drag) {
+        if (selected && !drag && isTop) {
           this.placeFromTopLeft(view, waste.x, view.baseY - PHYS.floatY, {
             scale: PHYS.floatScale,
             zIndex: 2000,
@@ -1666,6 +2074,10 @@ export class CardRenderer {
     this.exitPairShared(ids, onDone, ticker);
   }
 
+  /**
+   * Blocks new pointer / draw / undo.
+   * Does NOT include exit fly-away or flip (product: 上抛开始即可操作).
+   */
   isBusy(): boolean {
     return (
       this.animating.size > 0 ||
@@ -1673,5 +2085,15 @@ export class CardRenderer {
       this.drawMoving ||
       this.recycleAnimating
     );
+  }
+
+  /** Card mid flip-to-face — not busy globally, but not draggable. */
+  isFlipping(id: CardId): boolean {
+    return this.flipping.has(id);
+  }
+
+  /** Matched pair still on exit trajectory (not pickable). */
+  isExiting(id: CardId): boolean {
+    return this.exiting.has(id);
   }
 }

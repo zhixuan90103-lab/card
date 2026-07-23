@@ -1,12 +1,13 @@
-# 物理手感 · 实现钉 v1.3（POC 实机校准后）
+# 物理手感 · 实现钉 v1.4（POC 实机校准后）
 
-**日期：** 2026-07-23（v1.3 点选飞入 + 上抛关联 + 选中态）  
+**日期：** 2026-07-23（v1.4 翻牌时机 + 输入解锁）  
 **状态：** 拍板 · **POC 必遵** · 参数以代码 `src/render/phys.ts` 为准  
 **权威链：** 需求钉 `09` → 事件 `10` → 参数 `11` → **本文** → 代码  
 **纪要：**  
 - `docs/changelog/2026-07-23_match_exit_feel.md`  
 - `docs/changelog/2026-07-23_drag_handfeel.md`  
-- `docs/changelog/2026-07-23_tap_meet_select.md`（本文对应）
+- `docs/changelog/2026-07-23_tap_meet_select.md`  
+- `docs/changelog/2026-07-23_flip_input.md`（v1.4）
 
 > 未升格前：线上 art-ux/03 仍可能描述旧 flyAway；**新 POC 以本文 + 代码为准**。
 
@@ -20,7 +21,7 @@
 
 ---
 
-## 0.1 产品钉总表（v1.1–v1.3）
+## 0.1 产品钉总表（v1.1–v1.4）
 
 | 主题 | 定稿 |
 |------|------|
@@ -30,6 +31,9 @@
 | **飞入** | ease-in-out · **无上抛弧** · 飞牌 z≈9500 · 时长 ~120–160ms |
 | **选中** | 仅选中牌放大 **1.1**（牌心）· 轻晃 · 意图伙伴 **不放大** |
 | **拖拽** | 100ms 放大到 1.16 · 极小视觉滞后 · 倾斜∝速度 · 拖速→上抛 1～1.3 |
+| **翻牌时机** | 配对 **上抛开始** 即翻新 free（与 exit 并行） |
+| **翻牌动态** | breath **1.3** · 每张随机 Z 倾 ±~3–8° · 牌心 |
+| **输入解锁** | **上抛开始即可**点/拖下一张；**正在翻的牌不可拖** |
 
 ---
 
@@ -53,6 +57,7 @@ exitVx: 420, exitVy0: -1650, exitG: 7000,
 exitSpinDegPerSec: 900, exitSpinForceMin/Max: 0.72/1.38,
 matchPopScale: 1.26,
 exitHardMs: 700,
+flipMs: 180, flipBreath: 1.3, flipTiltMaxDeg: 8,
 
 // 拖拽
 dragScale: 1.16, dragScaleMs: 100, dragVisualFollow: 0.55,
@@ -62,12 +67,24 @@ dragThrowMinK: 1, dragThrowMaxK: 1.3,
 
 ---
 
-## 2. S0 · busy
+## 2. S0 · busy / 输入
 
 ```text
-isBusy = meet|exit|snap|recycle|dragPos|drawMoving
-match: applyMatchStartPoses → animating，防 !alive 被 sync 藏牌
+isBusy =
+  animating   // meet、snap、抽移、洗回等（不含 exit）
+  ∨ dragPos ∨ drawMoving ∨ recycleAnimating
+
+// 不进 isBusy：
+exiting   // 配对上抛飞出（sync 仍 skip，防 !alive 被藏）
+flipping  // 翻牌全局不锁；单卡 isFlipping → 禁拖
+
+// 产品直白：
+// - meet（A1 飞 A2）期间：不可操作
+// - 上抛一开始：可操作下一张
+// - 正在翻的那张：不能拖；其它可操作
 ```
+
+match：`applyMatchStartPoses` → 短暂 animating；exit 开始转入 `exiting` 并清 animating。
 
 ---
 
@@ -84,22 +101,17 @@ match: applyMatchStartPoses → animating，防 !alive 被 sync 藏牌
 
 ---
 
-## 4. S2 · 点消（v1.3）
+## 4. S2 · 点消（v1.3+）
 
 ```text
 选中 A1 后点 A2：
   startPoses = capture([A1,A2])
-  applyMatch; sync(skip=pair)
-  meetPair(clusterAtId=A2):
-    A2 全程不动
-    A1 直线 ease-in-out 飞向 A2 中心（无弧）
-    A1 zIndex ≈ 9500（避免穿层）
-    落地前 25% 再 matchPop
-    落地 ±4 微偏（稳定左右分飞）
-    carry.approachNx/Ny = A1→A2 单位方向
-  exitPairShared(carry, throwForceK=1)
-    // 同拖消：分抛 + 上抛 + spin + approach 偏角
-  flip newly free; refresh
+  applyMatch; sync(skip=pair, holdBack=toFlip)
+  meetPair(clusterAtId=A2): …（同 v1.3）
+  // 上抛开始：
+  flipToFace(toFlip)     // ★ 与 exit 同时，非 exit 结束后
+  exitPairShared → exiting（不 busy）
+  两者都结束 → refresh()
 ```
 
 ---
@@ -142,19 +154,36 @@ approach: 飞入或拖速单位向量
 
 ---
 
-## 7–9 · 抽 / 洗回 / 翻
+## 7–9 · 抽 / 洗回 / 翻（v1.4）
 
-（同前：抽两段、洗回 cap、flip+breath !busy）
+### 抽 / 洗回
+（同前：抽两段位移→翻；洗回 cap）
+
+### 配对后新 free 翻（P-flip）
+
+```text
+toFlip = freeAfter − freeBefore − pair（puzzle，≤12）
+holdBack 直到上抛开始
+doExit 时：
+  flipToFace(toFlip)  // 并行
+  exitPairShared(pair)
+// flip: scale.x 伪翻 + breath 1.3 + 每卡随机 Z 倾
+// 轴：牌心；!busy 全局；isFlipping(id) 禁拖该卡
+```
+
+### 抽牌翻
+waste 到位后 `flipToFace`（时机仍为到位后，非配对上抛）。
 
 ---
 
-## 10. 验收勾选（v1.3）
+## 10. 验收勾选（v1.4）
 
 - [x] 点消：A1→A2 直线飞入，A2 不动，飞牌最上层  
-- [x] 无飞入上抛弧  
-- [x] 叠后 exit 与拖消同套；抛角∝飞入/拖速  
-- [x] 选中仅自己 1.1 + 轻晃，牌心  
+- [x] 无飞入上抛弧；抛角∝飞入/拖速  
+- [x] 选中仅自己 1.1 + 轻晃  
 - [x] 拖：100ms 放大、小滞后、速度倾斜、拖速上抛  
+- [x] **上抛开始即翻新 free**；breath 1.3 + 随机倾角  
+- [x] **上抛开始即可操作**；**翻牌中的牌不可拖**  
 - [ ] 升格 art-ux 03/04  
 
 ---
@@ -164,8 +193,9 @@ approach: 飞入或拖速单位向量
 | 能力 | 文件 |
 |------|------|
 | PHYS | `src/render/phys.ts` |
-| meet / exit / select idle / drag | `src/render/cards.ts` |
-| 点消 clusterAtId=A2、拖 approachDir | `src/main.ts` |
+| meet / exit(exiting) / flip / select idle / drag | `src/render/cards.ts` |
+| playMatchClear 并行 flip+exit、isBusy 策略 | `src/main.ts` |
+| isFlipping / isExiting 禁拖 | `src/main.ts` pointerdown / drop |
 
 ---
 
@@ -176,4 +206,5 @@ approach: 飞入或拖速单位向量
 | v1 | 2026-07-22 | 初版共抛钉 |
 | v1.1 | 2026-07-23 | 分抛、skipMeet、跨侧 |
 | v1.2 | 2026-07-23 | 拖拽手感、牌心共识 |
-| **v1.3** | **2026-07-23** | **点消 A1→A2、无弧、抛角∝飞入、选中 1.1/轻晃/仅自己放大** |
+| v1.3 | 2026-07-23 | 点消 A1→A2、无弧、抛角∝飞入、选中 1.1/轻晃 |
+| **v1.4** | **2026-07-23** | **上抛始翻牌；flip 1.3+随机倾；上抛始可操作；翻中禁拖** |
