@@ -40,7 +40,9 @@
 | [research/handfeel/08_self_consistency_audit.md](./research/handfeel/08_self_consistency_audit.md) | **手感自洽评估 4.0/5** |
 | [research/handfeel/09_physical_feel_research_plan.md](./research/handfeel/09_physical_feel_research_plan.md) | 物理手感检索计划 v1.2（检索关） |
 | [research/handfeel/14_physical_impl_pins.md](./research/handfeel/14_physical_impl_pins.md) | **物理实现钉（POC）v1.5** |
-| [research/handfeel/15_drag_intent_research_plan.md](./research/handfeel/15_drag_intent_research_plan.md) | **拖动意图识别检索计划 v0.1**（× iOS 输入法） |
+| [research/handfeel/15_drag_intent_research_plan.md](./research/handfeel/15_drag_intent_research_plan.md) | **拖动意图识别检索计划 v0.3（检索关）** |
+| [research/handfeel/16_drag_intent_gap_audit.md](./research/handfeel/16_drag_intent_gap_audit.md) | **意图计划反查补漏 v1** |
+| [research/handfeel/19_intent_impl_pins.md](./research/handfeel/19_intent_impl_pins.md) | **意图实现钉 v0.1（POC）** |
 | [changelog/2026-07-23_match_exit_feel.md](./changelog/2026-07-23_match_exit_feel.md) | 配对飞出/跨侧 | |
 | [changelog/2026-07-23_drag_handfeel.md](./changelog/2026-07-23_drag_handfeel.md) | 拖拽/牌心 | |
 | [changelog/2026-07-23_tap_meet_select.md](./changelog/2026-07-23_tap_meet_select.md) | 点选飞入/抛角/选中 | |
@@ -59,6 +61,9 @@
 | [changelog/2026-07-22_full_roundup.md](./changelog/2026-07-22_full_roundup.md) | **全日权威总表（优先读）** |
 | [changelog/2026-07-22_d27_fair_keys.md](./changelog/2026-07-22_d27_fair_keys.md) | **D27 公平钥匙几何 + hard 可清** |
 | [changelog/2026-07-22_near_miss_p0.md](./changelog/2026-07-22_near_miss_p0.md) | **Near-miss P0（差一点体感·发局）** |
+| [changelog/2026-07-23_ios_iphone_checklist.md](./changelog/2026-07-23_ios_iphone_checklist.md) | **iPhone-only 打包/适配清单** |
+| [changelog/2026-07-23_capacitor_ios.md](./changelog/2026-07-23_capacitor_ios.md) | Capacitor + 震动 |
+| [changelog/2026-07-23_native_shell_layout.md](./changelog/2026-07-23_native_shell_layout.md) | 真机壳布局根治 |
 | [changelog/2026-07-22_drag_match_pile_shadow.md](./changelog/2026-07-22_drag_match_pile_shadow.md) | 拖拽配对 + 牌背 + 抽牌区常驻阴影 |
 | [changelog/2026-07-22_poker_assets.md](./changelog/2026-07-22_poker_assets.md) | Poker 正/背资源与 bake |
 | [changelog/2026-07-22_art_warm_cards.md](./changelog/2026-07-22_art_warm_cards.md) | 暖色美术迭代 |

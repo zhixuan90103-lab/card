@@ -7,8 +7,24 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        applyFeltChrome()
         return true
+    }
+
+    /// Cream felt under WKWebView — prevents system black strips at home indicator.
+    private func applyFeltChrome() {
+        let felt = UIColor(red: 0xef / 255.0, green: 0xe5 / 255.0, blue: 0xd9 / 255.0, alpha: 1)
+        window?.backgroundColor = felt
+        window?.rootViewController?.view.backgroundColor = felt
+        if #available(iOS 13.0, *) {
+            for scene in UIApplication.shared.connectedScenes {
+                guard let ws = scene as? UIWindowScene else { continue }
+                for w in ws.windows {
+                    w.backgroundColor = felt
+                    w.rootViewController?.view.backgroundColor = felt
+                }
+            }
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
@@ -26,7 +42,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        // window is often nil in didFinishLaunching with storyboard — re-apply here
+        applyFeltChrome()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

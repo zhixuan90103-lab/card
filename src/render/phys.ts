@@ -65,8 +65,12 @@ export const PHYS = {
   /** clamp spin force scale: spin = base * clamp(forceK, min, max) */
   exitSpinForceMin: 0.72,
   exitSpinForceMax: 1.38,
-  /** padding outside design box before count as off-screen */
-  exitOffPad: 40,
+  /**
+   * Padding outside design box before count as off-screen.
+   * Keep ≤ FX_PAD so cards can travel through the bleed before despawn.
+   * @see viewport/design FX_PAD_*
+   */
+  exitOffPad: 200,
   /** Match success pop: cards enlarge at clear (meet peak / exit punch) */
   matchPopScale: 1.26,
   /** Drag / skip-meet: ms to ramp into pop */

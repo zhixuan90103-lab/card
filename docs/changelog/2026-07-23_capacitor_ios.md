@@ -28,19 +28,15 @@ Web 配对牌 → 真机 iOS 体验；消除/抽牌/点选带 Haptics。
 
 ## 打包到手机
 
+**Agent 约定：** 用户说「打包」时执行完整流程并打开 Xcode：
+
 ```bash
-npm run cap:ios
-# 或分步：
 npm run build
 npx cap sync ios
 npx cap open ios
+# 等价：npm run cap:ios
 ```
 
-Xcode：选真机 → Signing（个人 Team）→ Run。
+Xcode：选真机（iPhone 15 Pro）→ Signing（个人 Team）→ Run。
 
-以后改代码再体验：
-
-```bash
-npm run cap:sync   # build + sync
-# 再在 Xcode Run（或再次 cap open ios）
-```
+**iPhone-only 清单：** 见 `2026-07-23_ios_iphone_checklist.md`。

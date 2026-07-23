@@ -16,7 +16,15 @@
 | [11_physical_anim_params.md](./11_physical_anim_params.md) | 物理动画参数草案 | ✅ **v0.6** |
 | [13_physical_gap_audit.md](./13_physical_gap_audit.md) | 物理轨反查 | ✅ |
 | [14_physical_impl_pins.md](./14_physical_impl_pins.md) | **物理实现钉（POC）** | ✅ **v1.5** |
-| [15_drag_intent_research_plan.md](./15_drag_intent_research_plan.md) | **拖动意图识别 · 检索计划**（iOS 输入法映射） | 📋 **v0.1 待开** |
+| [15_drag_intent_research_plan.md](./15_drag_intent_research_plan.md) | **拖动意图识别 · 检索计划** | ✅ **v0.3 检索关** · 待 POC |
+| [16_drag_intent_gap_audit.md](./16_drag_intent_gap_audit.md) | **意图计划反查补漏** | ✅ **v1** |
+| [17_intent_event_table.md](./17_intent_event_table.md) | 意图事件表 | ✅ v0.1 |
+| [18_intent_features_params.md](./18_intent_features_params.md) | 意图特征/参数 | ✅ v0.1 假设 |
+| [19_intent_impl_pins.md](./19_intent_impl_pins.md) | **意图实现钉（POC）** | ✅ v0.1 |
+| [sources/intent_a_softkey_decoder.md](./sources/intent_a_softkey_decoder.md) | 软键盘 decoder | ✅ |
+| [sources/intent_a_ios_behavior.md](./sources/intent_a_ios_behavior.md) | iOS 键盘行为 | ✅ |
+| [sources/intent_b_fail_stories.md](./sources/intent_b_fail_stories.md) | 误触故事 8 | ✅ |
+| [sources/intent_c_game_drag.md](./sources/intent_c_game_drag.md) | 拖放 UX 竞品薄 | ✅ |
 | [../../docs/changelog/2026-07-23_match_exit_feel.md](../../docs/changelog/2026-07-23_match_exit_feel.md) | 飞出/跨侧 | ✅ |
 | [../../docs/changelog/2026-07-23_drag_handfeel.md](../../docs/changelog/2026-07-23_drag_handfeel.md) | 拖拽/牌心 | ✅ |
 | [../../docs/changelog/2026-07-23_tap_meet_select.md](../../docs/changelog/2026-07-23_tap_meet_select.md) | 点选飞入/抛角/选中 | ✅ |

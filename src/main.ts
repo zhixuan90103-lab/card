@@ -72,8 +72,9 @@ function syncPileRects(session: GameSession): void {
 }
 
 async function main(): Promise<void> {
-  // Capacitor：真机全屏布局 + 状态栏安全区
+  // Capacitor：真机等比布局 + 米色铺满（避免黑边 / 压扁）
   if (isNativeApp()) {
+    document.documentElement.classList.add('native-app');
     document.body.classList.add('native-app');
   }
 
@@ -91,6 +92,14 @@ async function main(): Promise<void> {
 
   const { app, world, destroy } = await createPixiApp();
   await loadCardFaceAssets();
+
+  // iOS: pause ticker when backgrounded (battery / freezes mid-animation)
+  const onVisibility = () => {
+    if (document.hidden) app.ticker.stop();
+    else app.ticker.start();
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+
   // Tray under draw piles, then cards on top
   const pileTray = new PileTray();
   world.addChild(pileTray.root);
@@ -318,10 +327,20 @@ async function main(): Promise<void> {
     },
   });
 
-  // Live tuner: 抽牌区 + 牌阴影
-  mountTrayTuner({
-    onShadowChange: () => cards.sync(session.getState()),
-  });
+  // Live tuner: 仅桌面调试；真机 / 手机视口不挂载
+  const showDevTuner =
+    !isNativeApp() &&
+    !(
+      typeof window !== 'undefined' &&
+      (window.matchMedia('(max-width: 520px)').matches ||
+        (window.matchMedia('(pointer: coarse)').matches &&
+          window.innerWidth < 900))
+    );
+  if (showDevTuner) {
+    mountTrayTuner({
+      onShadowChange: () => cards.sync(session.getState()),
+    });
+  }
   onDrawZoneChange(() => {
     syncPileRects(session);
     cards.sync(session.getState());
