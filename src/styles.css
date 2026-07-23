@@ -43,6 +43,30 @@ body {
   overflow: hidden;
 }
 
+/* Capacitor / native: fill device, no fake phone chrome */
+body.native-app {
+  background: #efe5d9;
+}
+body.native-app #letterbox {
+  background: #efe5d9;
+  /* safe-area for notch / home indicator */
+  padding:
+    env(safe-area-inset-top, 0)
+    env(safe-area-inset-right, 0)
+    env(safe-area-inset-bottom, 0)
+    env(safe-area-inset-left, 0);
+  box-sizing: border-box;
+}
+body.native-app #phone-frame {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 #game-canvas {
   position: absolute;
   inset: 0;

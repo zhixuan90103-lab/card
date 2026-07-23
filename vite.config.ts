@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: '.',
+  // Relative asset URLs required for Capacitor file:// / capacitor://
+  base: './',
   publicDir: 'public',
   server: {
     port: 5280,

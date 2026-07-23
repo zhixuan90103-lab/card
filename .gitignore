@@ -4,3 +4,9 @@ dist/
 *.local
 .vite/
 coverage/
+# Capacitor / Xcode local
+ios/App/Pods/
+ios/App/build/
+ios/DerivedData/
+*.xcuserstate
+.idea/

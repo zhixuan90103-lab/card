@@ -15,11 +15,13 @@
 | [10_physical_ue_events.md](./10_physical_ue_events.md) | 物理 UE 事件草案 | ✅ v0.2 |
 | [11_physical_anim_params.md](./11_physical_anim_params.md) | 物理动画参数草案 | ✅ **v0.6** |
 | [13_physical_gap_audit.md](./13_physical_gap_audit.md) | 物理轨反查 | ✅ |
-| [14_physical_impl_pins.md](./14_physical_impl_pins.md) | **物理实现钉（POC）** | ✅ **v1.4** |
+| [14_physical_impl_pins.md](./14_physical_impl_pins.md) | **物理实现钉（POC）** | ✅ **v1.5** |
+| [15_drag_intent_research_plan.md](./15_drag_intent_research_plan.md) | **拖动意图识别 · 检索计划**（iOS 输入法映射） | 📋 **v0.1 待开** |
 | [../../docs/changelog/2026-07-23_match_exit_feel.md](../../docs/changelog/2026-07-23_match_exit_feel.md) | 飞出/跨侧 | ✅ |
 | [../../docs/changelog/2026-07-23_drag_handfeel.md](../../docs/changelog/2026-07-23_drag_handfeel.md) | 拖拽/牌心 | ✅ |
 | [../../docs/changelog/2026-07-23_tap_meet_select.md](../../docs/changelog/2026-07-23_tap_meet_select.md) | 点选飞入/抛角/选中 | ✅ |
 | [../../docs/changelog/2026-07-23_flip_input.md](../../docs/changelog/2026-07-23_flip_input.md) | 翻牌时机/动态/输入解锁 | ✅ |
+| [../../docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md](../../docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md) | 抽叠/层级/自动抽/蒙黑 | ✅ |
 | [12_effective_sources_list.md](./12_effective_sources_list.md) | **有效来源 List** | ✅ |
 | [sources/](./sources/) | 源卡 fa_* / **pf_*** | ✅ |
 

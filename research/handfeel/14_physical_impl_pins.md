@@ -1,13 +1,14 @@
-# 物理手感 · 实现钉 v1.4（POC 实机校准后）
+# 物理手感 · 实现钉 v1.5（POC 实机校准后）
 
-**日期：** 2026-07-23（v1.4 翻牌时机 + 输入解锁）  
-**状态：** 拍板 · **POC 必遵** · 参数以代码 `src/render/phys.ts` 为准  
+**日期：** 2026-07-23（v1.5 抽牌区 / 层级 / 自动抽动画 / 蒙黑）  
+**状态：** 拍板 · **POC 必遵** · 参数以代码 `src/render/phys.ts` + `CARD_Z` 为准  
 **权威链：** 需求钉 `09` → 事件 `10` → 参数 `11` → **本文** → 代码  
 **纪要：**  
 - `docs/changelog/2026-07-23_match_exit_feel.md`  
 - `docs/changelog/2026-07-23_drag_handfeel.md`  
 - `docs/changelog/2026-07-23_tap_meet_select.md`  
-- `docs/changelog/2026-07-23_flip_input.md`（v1.4）
+- `docs/changelog/2026-07-23_flip_input.md`（v1.4）  
+- `docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md`（**v1.5**）
 
 > 未升格前：线上 art-ux/03 仍可能描述旧 flyAway；**新 POC 以本文 + 代码为准**。
 
@@ -34,6 +35,12 @@
 | **翻牌时机** | 配对 **上抛开始** 即翻新 free（与 exit 并行） |
 | **翻牌动态** | breath **1.3** · 每张随机 Z 倾 ±~3–8° · 牌心 |
 | **输入解锁** | **上抛开始即可**点/拖下一张；**正在翻的牌不可拖** |
+| **抽牌区底板** | stock / waste **线框常显**（stock 宽=本局峰值足迹） |
+| **抽牌区阴影** | **有牌**才显示**共用**座位影；stock 宽随**当前**张数；落座无单卡影 |
+| **洗→抽间隔** | `recPauseBeforeDrawMs` = **50** |
+| **消废后补抽** | 状态 `autoDrewId` + 上抛时 `playDrawMoveFlip`（禁止瞬移） |
+| **蒙黑** | **仅抽牌翻面** `dimWasteUnder`；谜题翻 / 拖动 **不**蒙抽叠 |
+| **层级** | 动效用 `CARD_Z` FX 带（≥8000）；落座 stock/waste/select 更低 |
 
 ---
 
@@ -63,7 +70,21 @@ flipMs: 180, flipBreath: 1.3, flipTiltMaxDeg: 8,
 dragScale: 1.16, dragScaleMs: 100, dragVisualFollow: 0.55,
 dragTiltMaxDeg: 26, dragTiltRefSpeed: 520,
 dragThrowMinK: 1, dragThrowMaxK: 1.3,
+
+// 抽 / 洗
+recPauseBeforeDrawMs: 50,
+drawMoveMs / drawSettleMs / drawFlipBreath / stockCompactMs … 见 phys.ts
 ```
+
+### 1.1 `CARD_Z` 摘要（`cards.ts`）
+
+```text
+seat 3–5 | stockBase 50+ | wasteBase 500+ | select 1k–2k
+drag 8000 | stockCompact 8400 | draw 8500 | flip 8600
+recycle 8700–8800 | matchStart/meet/exit 9000–9300
+```
+
+动画中保持 FX 带；落稳回 `stockZ` / `wasteZ` / puzzle layer。
 
 ---
 
@@ -154,10 +175,24 @@ approach: 飞入或拖速单位向量
 
 ---
 
-## 7–9 · 抽 / 洗回 / 翻（v1.4）
+## 7–9 · 抽 / 洗回 / 翻（v1.5）
+
+### 抽牌区座位（表现）
+
+```text
+stockSlot / wasteSlot：始终 paintEmptySlot（线框+软填）
+stock 足迹：peak 锁宽（本局不缩）；阴影用 current 张数
+seatShadow：stock/waste 仅 length>0 时 paint；落座牌 shadow:false
+拖中：该牌 shadow:true
+```
 
 ### 抽 / 洗回
-（同前：抽两段位移→翻；洗回 cap）
+
+```text
+抽：stock → 过冲 → flip(dimWasteUnder) → settle waste + stockCompact(FX z)
+洗：waste 序飞回 frame→peek；落稳 z→stockZ
+洗完全部落库后 recPauseBeforeDrawMs(50) → drawOnly + 抽动画
+```
 
 ### 配对后新 free 翻（P-flip）
 
@@ -165,18 +200,31 @@ approach: 飞入或拖速单位向量
 toFlip = freeAfter − freeBefore − pair（puzzle，≤12）
 holdBack 直到上抛开始
 doExit 时：
-  flipToFace(toFlip)  // 并行
+  flipToFace(toFlip)           // 并行；dimWasteUnder 默认 false
+  [若 autoDrewId] playDrawMoveFlip  // 并行；抽路径 flip 才 dim waste
   exitPairShared(pair)
 // flip: scale.x 伪翻 + breath 1.3 + 每卡随机 Z 倾
 // 轴：牌心；!busy 全局；isFlipping(id) 禁拖该卡
 ```
 
-### 抽牌翻
-waste 到位后 `flipToFace`（时机仍为到位后，非配对上抛）。
+### 消废牌 → 自动补抽
+
+```text
+applyMatch → ensureWasteHasCard → autoDrewId
+playMatchClear sync skip = pair ∪ autoDrew ∪ stock
+上抛开始：playDrawMoveFlip(autoDrewId)  // 与手动抽同管线
+```
+
+### 蒙黑
+
+```text
+仅 opts.dimWasteUnder === true（抽牌翻面）
+谜题 reveal / 拖动 / showFace|showBack：清残留 dim
+```
 
 ---
 
-## 10. 验收勾选（v1.4）
+## 10. 验收勾选（v1.5）
 
 - [x] 点消：A1→A2 直线飞入，A2 不动，飞牌最上层  
 - [x] 无飞入上抛弧；抛角∝飞入/拖速  
@@ -184,6 +232,11 @@ waste 到位后 `flipToFace`（时机仍为到位后，非配对上抛）。
 - [x] 拖：100ms 放大、小滞后、速度倾斜、拖速上抛  
 - [x] **上抛开始即翻新 free**；breath 1.3 + 随机倾角  
 - [x] **上抛开始即可操作**；**翻牌中的牌不可拖**  
+- [x] 抽叠线框常显；有牌共用影；stock 影宽随张数  
+- [x] CARD_Z：动态 ≥ drag 带，不钻静止牌  
+- [x] 消废后自动抽有完整抽动画  
+- [x] 蒙黑仅抽牌翻面  
+- [x] 洗→抽 50ms  
 - [ ] 升格 art-ux 03/04  
 
 ---
@@ -193,8 +246,9 @@ waste 到位后 `flipToFace`（时机仍为到位后，非配对上抛）。
 | 能力 | 文件 |
 |------|------|
 | PHYS | `src/render/phys.ts` |
-| meet / exit(exiting) / flip / select idle / drag | `src/render/cards.ts` |
-| playMatchClear 并行 flip+exit、isBusy 策略 | `src/main.ts` |
+| CARD_Z / 座位 / dim / meet·exit·flip·draw·recycle | `src/render/cards.ts` |
+| playMatchClear：flip + autoDraw + exit | `src/main.ts` |
+| autoDrewId / ensureWasteHasCard | `src/core/state.ts` |
 | isFlipping / isExiting 禁拖 | `src/main.ts` pointerdown / drop |
 
 ---
@@ -207,4 +261,5 @@ waste 到位后 `flipToFace`（时机仍为到位后，非配对上抛）。
 | v1.1 | 2026-07-23 | 分抛、skipMeet、跨侧 |
 | v1.2 | 2026-07-23 | 拖拽手感、牌心共识 |
 | v1.3 | 2026-07-23 | 点消 A1→A2、无弧、抛角∝飞入、选中 1.1/轻晃 |
-| **v1.4** | **2026-07-23** | **上抛始翻牌；flip 1.3+随机倾；上抛始可操作；翻中禁拖** |
+| v1.4 | 2026-07-23 | 上抛始翻牌；flip 1.3+随机倾；上抛始可操作；翻中禁拖 |
+| **v1.5** | **2026-07-23** | **抽叠座位/共用影；CARD_Z；autoDrew 动画；蒙黑仅抽翻；recPause 50** |

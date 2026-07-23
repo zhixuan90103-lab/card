@@ -8,7 +8,7 @@ function makeCard(
   partial: Partial<Card> & Pick<Card, 'id' | 'rank' | 'layer' | 'tier' | 'rect'>,
 ): Card {
   return {
-    suit: undefined,
+    suit: 'S',
     alive: true,
     zone: 'puzzle',
     ...partial,

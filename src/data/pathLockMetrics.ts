@@ -2,7 +2,7 @@
  * 路径锁指标（H1）：锁 match-key 稀缺度、桌面钥匙率、发局门槛
  */
 import type { Level, LevelCardDef, Rank, Suit } from '../core/types';
-import { matchKey, matchKeyOf, pickSuitForColor, suitColor } from '../core/types';
+import { matchKey, pickSuitForColor, suitColor } from '../core/types';
 import { canFullyClear, probeGreedyProgress } from './levelSolve';
 import type { StockEntry } from './suitPaint';
 

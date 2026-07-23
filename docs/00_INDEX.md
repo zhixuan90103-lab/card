@@ -1,6 +1,6 @@
 # 项目文档索引
 
-**更新：** 2026-07-22（拖拽配对 + 座位阴影 + 牌背；见 changelog）
+**更新：** 2026-07-23（抽牌区整理 / CARD_Z / 自动抽动画 / 蒙黑；见 handfeel v1.5 changelog）
 
 > **新窗口开工（规则/实现）：** [`HANDOFF_IMPLEMENTATION.md`](./HANDOFF_IMPLEMENTATION.md) → [`design/13`](./design/13_mvp_plan_and_todolist.md)  
 > **新窗口开工（美术+体验）：** [`HANDOFF_ART_UX.md`](./HANDOFF_ART_UX.md)  
@@ -39,11 +39,13 @@
 | [research/handfeel/07_round3_desk_research.md](./research/handfeel/07_round3_desk_research.md) | 第三轮检索收口 |
 | [research/handfeel/08_self_consistency_audit.md](./research/handfeel/08_self_consistency_audit.md) | **手感自洽评估 4.0/5** |
 | [research/handfeel/09_physical_feel_research_plan.md](./research/handfeel/09_physical_feel_research_plan.md) | 物理手感检索计划 v1.2（检索关） |
-| [research/handfeel/14_physical_impl_pins.md](./research/handfeel/14_physical_impl_pins.md) | **物理实现钉（POC）v1.4** |
+| [research/handfeel/14_physical_impl_pins.md](./research/handfeel/14_physical_impl_pins.md) | **物理实现钉（POC）v1.5** |
+| [research/handfeel/15_drag_intent_research_plan.md](./research/handfeel/15_drag_intent_research_plan.md) | **拖动意图识别检索计划 v0.1**（× iOS 输入法） |
 | [changelog/2026-07-23_match_exit_feel.md](./changelog/2026-07-23_match_exit_feel.md) | 配对飞出/跨侧 | |
 | [changelog/2026-07-23_drag_handfeel.md](./changelog/2026-07-23_drag_handfeel.md) | 拖拽/牌心 | |
 | [changelog/2026-07-23_tap_meet_select.md](./changelog/2026-07-23_tap_meet_select.md) | 点选飞入/抛角/选中 | |
 | [changelog/2026-07-23_flip_input.md](./changelog/2026-07-23_flip_input.md) | 翻牌时机/动态/输入解锁 | |
+| [changelog/2026-07-23_drawzone_z_autodraw_dim.md](./changelog/2026-07-23_drawzone_z_autodraw_dim.md) | **抽叠/层级/自动抽/蒙黑** | |
 | [research/handfeel/13_physical_gap_audit.md](./research/handfeel/13_physical_gap_audit.md) | 物理轨反查 |
 | [research/handfeel/10_physical_ue_events.md](./research/handfeel/10_physical_ue_events.md) | 物理 UE 事件草案 v0.2 |
 | [research/art-ux/03_ue_event_table.md](./research/art-ux/03_ue_event_table.md) | **UE 事件表 v1.2**（唯一源） |

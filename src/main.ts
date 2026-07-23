@@ -25,6 +25,13 @@ import { PHYS } from './render/phys';
 import { PileTray } from './render/pileTray';
 import { Hud } from './ui/hud';
 import { mountTrayTuner } from './ui/trayTuner';
+import {
+  hapticHeavy,
+  hapticLight,
+  hapticMedium,
+  hapticSuccess,
+  isNativeApp,
+} from './native/haptics';
 import { screenToDesign } from './viewport/design';
 import { getPhoneFrameEl } from './viewport/phoneFrame';
 
@@ -65,6 +72,11 @@ function syncPileRects(session: GameSession): void {
 }
 
 async function main(): Promise<void> {
+  // Capacitor：真机全屏布局 + 状态栏安全区
+  if (isNativeApp()) {
+    document.body.classList.add('native-app');
+  }
+
   /** 单关无限：局号 + seed；第 3/6/9… 局极难 */
   let runIndex = 1;
   let run: RunDeal = startNewRun(undefined, difficultyForRun(1));
@@ -134,9 +146,15 @@ async function main(): Promise<void> {
     return null;
   };
 
+  let lastWon = false;
   const refreshHud = () => {
     const st = session.getState();
     const hard = isHardDead(st);
+    if (st.status === 'won' && !lastWon) {
+      lastWon = true;
+      hapticSuccess();
+    }
+    if (st.status !== 'won') lastWon = false;
     hud.layoutPiles();
     hud.sync(st, {
       canUndo: session.canUndo(),
@@ -180,6 +198,7 @@ async function main(): Promise<void> {
       autoDrewId?: CardId | null;
     },
   ) => {
+    hapticHeavy();
     const startPoses = opts?.startPoses ?? cards.capturePoses(pair);
     const throwForceK = opts?.throwForceK ?? 1;
     const autoDrewId = opts?.autoDrewId ?? null;
@@ -373,6 +392,7 @@ async function main(): Promise<void> {
 
     const finish = () => refresh();
     const noteDraw = () => {
+      hapticMedium();
       drawsWithoutMatch += 1;
       const st = session.getState();
       if (
@@ -462,6 +482,8 @@ async function main(): Promise<void> {
       return;
     }
     // Select / reselect / cancel → float + hints
+    if (result.cancelled) hapticLight();
+    else if (!result.matched) hapticLight();
     const st = session.getState();
     cards.setMatchHints(st, st.selectedId);
     refresh();
@@ -635,6 +657,7 @@ async function main(): Promise<void> {
     }
 
     // Different card / empty: animate back to original seat
+    hapticLight();
     cards.snapBack(
       drag.id,
       { x: drag.home.x, y: drag.home.y },
