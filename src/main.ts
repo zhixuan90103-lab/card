@@ -1,6 +1,7 @@
 import { GameSession, pickCard } from './core';
+import { freeCardIds } from './core/rules';
 import { isHardDead, isSoftStuck } from './core/stuck';
-import type { CardId, Level } from './core/types';
+import type { CardId, GameState, Level } from './core/types';
 import { canMatchCards } from './core/types';
 import { STOCK_STACK_MAX_VISIBLE } from './data/layout';
 import {
@@ -20,11 +21,33 @@ import {
 import { createPixiApp } from './render/app';
 import { loadCardFaceAssets } from './render/cardAssets';
 import { CardRenderer } from './render/cards';
+import { PHYS } from './render/phys';
 import { PileTray } from './render/pileTray';
 import { Hud } from './ui/hud';
 import { mountTrayTuner } from './ui/trayTuner';
 import { screenToDesign } from './viewport/design';
 import { getPhoneFrameEl } from './viewport/phoneFrame';
+
+function freeIdSet(state: GameState): Set<CardId> {
+  return new Set(freeCardIds(state));
+}
+
+function puzzleNewlyFree(
+  freeBefore: Set<CardId>,
+  freeAfter: Set<CardId>,
+  state: GameState,
+  pair: CardId[],
+): CardId[] {
+  const pairSet = new Set(pair);
+  const out: CardId[] = [];
+  for (const id of freeAfter) {
+    if (freeBefore.has(id) || pairSet.has(id)) continue;
+    const c = state.cards[id];
+    if (!c || !c.alive || c.zone !== 'puzzle') continue;
+    out.push(id);
+  }
+  return out.slice(0, 12);
+}
 
 /** Keep stock/waste card rects aligned for logical pickCard (D17). */
 function syncPileRects(session: GameSession): void {
@@ -111,9 +134,7 @@ async function main(): Promise<void> {
     return null;
   };
 
-  const refresh = () => {
-    syncPileRects(session);
-    cards.sync(session.getState());
+  const refreshHud = () => {
     const st = session.getState();
     const hard = isHardDead(st);
     hud.layoutPiles();
@@ -126,28 +147,122 @@ async function main(): Promise<void> {
     });
   };
 
+  const refresh = () => {
+    syncPileRects(session);
+    const st = session.getState();
+    cards.sync(st);
+    cards.syncSelectIdle(st, app.ticker);
+    refreshHud();
+  };
+
+  /**
+   * Physical clear: meet → exitPairShared → flip newly free (14 S2/S3).
+   * No full refresh between sync(skip) and exit.
+   */
+  const playMatchClear = (
+    pair: CardId[],
+    freeBefore: Set<CardId>,
+    opts?: {
+      skipMeet?: boolean;
+      meetMs?: number;
+      /** Release / second-tap poses — animation MUST start here */
+      startPoses?: import('./render/cards').CardPose[];
+      /** Drag: gather at this card (drop pose), not geometric mid */
+      clusterAtId?: CardId;
+      /** Drag flick → loft multiplier (1 = nominal; faster drag > 1) */
+      throwForceK?: number;
+      /** Unit approach dir for throw angle (drag vel); meet uses flyer path */
+      approachDir?: { nx: number; ny: number };
+    },
+  ) => {
+    const startPoses = opts?.startPoses ?? cards.capturePoses(pair);
+    const throwForceK = opts?.throwForceK ?? 1;
+    // Lock pair before sync so !alive cannot hide them mid-frame
+    cards.applyMatchStartPoses(startPoses);
+    cards.clearHints();
+    syncPileRects(session);
+    const st = session.getState();
+    const freeAfter = freeIdSet(st);
+    const toFlip = puzzleNewlyFree(freeBefore, freeAfter, st, pair);
+    cards.sync(st, pair, { holdBackIds: toFlip });
+    // Re-apply after sync (sync skips pair, but belt-and-suspenders)
+    cards.applyMatchStartPoses(startPoses);
+    refreshHud();
+
+    // Flip newly-free when exit (上抛) starts — parallel with throw, not after
+    let exitDone = false;
+    let flipDone = toFlip.length === 0;
+    const tryFinishClear = () => {
+      if (exitDone && flipDone) refresh();
+    };
+
+    const afterExit = () => {
+      exitDone = true;
+      tryFinishClear();
+    };
+
+    const doExit = (
+      carry?: {
+        id: CardId;
+        vx: number;
+        vy: number;
+        scale: number;
+        approachNx?: number;
+        approachNy?: number;
+      }[],
+      approachDir?: { nx: number; ny: number },
+    ) => {
+      // Start reveal flip at the same moment as pair throw
+      if (toFlip.length > 0) {
+        const after = session.getState();
+        cards.flipToFace(
+          toFlip,
+          after,
+          () => {
+            flipDone = true;
+            tryFinishClear();
+          },
+          app.ticker,
+          true,
+        );
+      }
+      // After meet, carry is set → exit must NOT snap back to release poses
+      cards.exitPairShared(
+        pair,
+        afterExit,
+        app.ticker,
+        carry,
+        startPoses,
+        throwForceK,
+        approachDir ?? opts?.approachDir,
+      );
+    };
+
+    if (opts?.skipMeet) {
+      // Exit launches from release poses directly
+      doExit(undefined, opts?.approachDir);
+      return;
+    }
+    cards.meetPair(
+      pair,
+      doExit,
+      app.ticker,
+      opts?.meetMs ?? PHYS.meetMs,
+      startPoses,
+      { clusterAtId: opts?.clusterAtId },
+    );
+  };
+
   hud = new Hud(hudHost, {
     onDraw: () => {
       if (cards.isBusy() || session.getState().status === 'won') return;
-      const before = session.getState();
-      const stockBefore = before.stock.length + before.waste.length;
-      const { drew } = session.draw();
-      if (drew) {
-        drawsWithoutMatch += 1;
-        const st = session.getState();
-        if (
-          isSoftStuck(st) &&
-          drawsWithoutMatch >= Math.max(3, Math.min(stockBefore, 8))
-        ) {
-          softTipShown = true;
-        }
-      }
-      refresh();
+      doDraw();
     },
     onUndo: () => {
       if (cards.isBusy()) return;
       if (session.undo()) {
         drawsWithoutMatch = Math.max(0, drawsWithoutMatch - 1);
+        cards.clearHints();
         refresh();
       }
     },
@@ -175,7 +290,7 @@ async function main(): Promise<void> {
   const frame = getPhoneFrameEl();
   const canvas = app.canvas as HTMLCanvasElement;
 
-  const DRAG_THRESHOLD = 8; // design px before drag starts
+  const DRAG_THRESHOLD = PHYS.dragThreshold;
 
   type DragState = {
     id: CardId;
@@ -186,8 +301,28 @@ async function main(): Promise<void> {
     grabDy: number;
     home: { x: number; y: number; w: number; h: number };
     dragging: boolean;
+    /** last card top-left in design space (for velocity) */
+    lastX: number;
+    lastY: number;
+    lastT: number;
+    /** smoothed design-space velocity of card (px/s) */
+    velX: number;
+    velY: number;
   };
   let activeDrag: DragState | null = null;
+
+  /** Map measured drag speed → throw loft multiplier */
+  const throwForceFromDragSpeed = (speedPxPerSec: number): number => {
+    const ref = PHYS.dragThrowRefSpeed;
+    // Need very fast flick to approach max (was ref*1.55 → too easy to top out)
+    const t = Math.min(1, Math.max(0, speedPxPerSec / (ref * 2.2)));
+    // ease-in so only clear flicks push the top end
+    const e = t * t;
+    return (
+      PHYS.dragThrowMinK +
+      (PHYS.dragThrowMaxK - PHYS.dragThrowMinK) * e
+    );
+  };
 
   const hitStock = (p: { x: number; y: number }): boolean => {
     const stockR = getStockRect();
@@ -207,9 +342,15 @@ async function main(): Promise<void> {
   };
 
   const doDraw = () => {
-    const stockBefore =
-      session.getState().stock.length + session.getState().waste.length;
-    const { drew } = session.draw();
+    if (cards.isBusy() || session.getState().status === 'won') return;
+    const before = session.getState();
+    const stockBefore = before.stock.length + before.waste.length;
+    const willRecycle = before.stock.length === 0 && before.waste.length > 0;
+    const wasteIdsBefore = willRecycle ? [...before.waste] : [];
+
+    const { drew, recycled } = session.draw();
+    if (!drew && !recycled) return;
+
     if (drew) {
       drawsWithoutMatch += 1;
       const st = session.getState();
@@ -220,21 +361,64 @@ async function main(): Promise<void> {
         softTipShown = true;
       }
     }
+
+    cards.clearHints();
+    syncPileRects(session);
+    const st = session.getState();
+
+    const finish = () => refresh();
+
+    if (recycled && wasteIdsBefore.length > 0) {
+      // Logic already: waste shuffled into stock, one card drawn to waste top
+      const stockIds = [...st.stock];
+      const wasteTop = st.waste[st.waste.length - 1];
+      cards.sync(st, wasteTop ? [wasteTop] : []);
+      refreshHud();
+      cards.playRecycleSettle(stockIds, st, () => {
+        if (wasteTop && drew) {
+          cards.playDrawMoveFlip(wasteTop, session.getState(), finish, app.ticker);
+        } else {
+          finish();
+        }
+      }, app.ticker);
+      return;
+    }
+
+    if (drew) {
+      const wasteTop = st.waste[st.waste.length - 1];
+      if (wasteTop) {
+        cards.sync(st, [wasteTop]);
+        refreshHud();
+        cards.playDrawMoveFlip(wasteTop, st, finish, app.ticker);
+        return;
+      }
+    }
     refresh();
   };
 
   const doTapCard = (id: CardId) => {
+    const freeBefore = freeIdSet(session.getState());
     const selectedBefore = session.getState().selectedId;
+    // Capture float/home poses before match mutates selection / alive
+    const tapPoses =
+      selectedBefore != null
+        ? cards.capturePoses([selectedBefore, id])
+        : undefined;
     const result = session.tapCard(id);
     if (result.matched && selectedBefore) {
       drawsWithoutMatch = 0;
       softTipShown = false;
-      const pair = [selectedBefore, id];
-      cards.sync(session.getState(), pair);
-      refresh();
-      cards.flyAway(pair, () => refresh(), app.ticker);
+      // Tap: A1 (selected) flies to A2 (second tap), then same exit as drag match
+      playMatchClear([selectedBefore, id], freeBefore, {
+        startPoses: tapPoses,
+        clusterAtId: id,
+        throwForceK: 1,
+      });
       return;
     }
+    // Select / reselect / cancel → float + hints
+    const st = session.getState();
+    cards.setMatchHints(st, st.selectedId);
     refresh();
   };
 
@@ -261,6 +445,11 @@ async function main(): Promise<void> {
         grabDy: p.y - home.y,
         home,
         dragging: false,
+        lastX: home.x,
+        lastY: home.y,
+        lastT: performance.now(),
+        velX: 0,
+        velY: 0,
       };
       try {
         canvas.setPointerCapture(e.pointerId);
@@ -290,13 +479,32 @@ async function main(): Promise<void> {
       const distDesign = Math.hypot(dx, dy) / Math.max(scale, 1e-6);
       if (distDesign < DRAG_THRESHOLD) return;
       activeDrag.dragging = true;
+      const x0 = p.x - activeDrag.grabDx;
+      const y0 = p.y - activeDrag.grabDy;
+      activeDrag.lastX = x0;
+      activeDrag.lastY = y0;
+      activeDrag.lastT = performance.now();
+      activeDrag.velX = 0;
+      activeDrag.velY = 0;
     }
 
-    cards.setDragPosition(
-      activeDrag.id,
-      p.x - activeDrag.grabDx,
-      p.y - activeDrag.grabDy,
-    );
+    const cardX = p.x - activeDrag.grabDx;
+    const cardY = p.y - activeDrag.grabDy;
+    const now = performance.now();
+    const dt = (now - activeDrag.lastT) / 1000;
+    // Sample drag velocity in design px/s (EMA); ignore huge gaps
+    if (dt > 0.002 && dt < 0.08) {
+      const ix = (cardX - activeDrag.lastX) / dt;
+      const iy = (cardY - activeDrag.lastY) / dt;
+      const a = 0.4;
+      activeDrag.velX = activeDrag.velX * (1 - a) + ix * a;
+      activeDrag.velY = activeDrag.velY * (1 - a) + iy * a;
+    }
+    activeDrag.lastX = cardX;
+    activeDrag.lastY = cardY;
+    activeDrag.lastT = now;
+
+    cards.setDragPosition(activeDrag.id, cardX, cardY, app.ticker);
   };
 
   const onPointerUp = (e: PointerEvent) => {
@@ -332,15 +540,46 @@ async function main(): Promise<void> {
     const b = targetId ? st.cards[targetId] : null;
 
     if (targetId && a && b && canMatchCards(a, b)) {
+      const freeBefore = freeIdSet(session.getState());
+      // Capture BEFORE clearDrag / match — release finger pose is the start
+      const startPoses = cards.capturePoses([drag.id, targetId]);
       const { matched } = session.tryMatchPair(drag.id, targetId);
       if (matched) {
         drawsWithoutMatch = 0;
         softTipShown = false;
         cards.clearDrag(drag.id);
-        const pair = [drag.id, targetId];
-        cards.sync(session.getState(), pair);
-        refresh();
-        cards.flyAway(pair, () => refresh(), app.ticker);
+        // Keep dragged card at release coords (clearDrag only drops drag map)
+        cards.applyMatchStartPoses(startPoses);
+        // Drag success: NEVER run meet gather.
+        // Cross-side (A1 past A2 right / A2 past A1 left) made target slide a long
+        // way to cluster — felt like a hitch. Industry pattern: fly out from the
+        // exact release poses (finger-up), no second-phase travel.
+        // Flick speed → loft: stale if finger paused before release
+        let speed = Math.hypot(drag.velX, drag.velY);
+        const staleMs = performance.now() - drag.lastT;
+        if (staleMs > PHYS.dragVelStaleMs) {
+          const damp = Math.max(
+            0,
+            1 - (staleMs - PHYS.dragVelStaleMs) / 120,
+          );
+          speed *= damp;
+        }
+        const throwForceK = throwForceFromDragSpeed(speed);
+        // Flick direction → exit throw angle (same idea as A1→A2 fly-in)
+        let approachDir: { nx: number; ny: number } | undefined;
+        if (speed > 8) {
+          approachDir = {
+            nx: drag.velX / speed,
+            ny: drag.velY / speed,
+          };
+        }
+        playMatchClear([drag.id, targetId], freeBefore, {
+          skipMeet: true,
+          meetMs: 0,
+          startPoses,
+          throwForceK,
+          approachDir,
+        });
         return;
       }
     }

@@ -13,9 +13,12 @@
 | [08_self_consistency_audit.md](./08_self_consistency_audit.md) | **自洽评估 4.0/5** | ✅ 必读 |
 | [09_physical_feel_research_plan.md](./09_physical_feel_research_plan.md) | 物理手感检索计划 **v1.2** | 检索关 · 待 POC |
 | [10_physical_ue_events.md](./10_physical_ue_events.md) | 物理 UE 事件草案 | ✅ v0.2 |
-| [11_physical_anim_params.md](./11_physical_anim_params.md) | 物理动画参数草案 | ✅ v0.2 |
+| [11_physical_anim_params.md](./11_physical_anim_params.md) | 物理动画参数草案 | ✅ **v0.5** |
 | [13_physical_gap_audit.md](./13_physical_gap_audit.md) | 物理轨反查 | ✅ |
-| [14_physical_impl_pins.md](./14_physical_impl_pins.md) | **物理实现钉（POC 第一手）** | ✅ 二轮 E |
+| [14_physical_impl_pins.md](./14_physical_impl_pins.md) | **物理实现钉（POC）** | ✅ **v1.3** |
+| [../../docs/changelog/2026-07-23_match_exit_feel.md](../../docs/changelog/2026-07-23_match_exit_feel.md) | 飞出/跨侧 | ✅ |
+| [../../docs/changelog/2026-07-23_drag_handfeel.md](../../docs/changelog/2026-07-23_drag_handfeel.md) | 拖拽/牌心 | ✅ |
+| [../../docs/changelog/2026-07-23_tap_meet_select.md](../../docs/changelog/2026-07-23_tap_meet_select.md) | 点选飞入/抛角/选中 | ✅ |
 | [12_effective_sources_list.md](./12_effective_sources_list.md) | **有效来源 List** | ✅ |
 | [sources/](./sources/) | 源卡 fa_* / **pf_*** | ✅ |
 
