@@ -47,10 +47,8 @@ H-* 假设未验证前不当「已测数据」
 
 | ID | 路径 | 内容 |
 |----|------|------|
-| **L-AX-08** | `research/art-ux/08_impl_pins_r31.md` | **实现钉** S1–S7、H-\* 默认、文案 |
-| **L-AX-03** | `research/art-ux/03_ue_event_table.md` | **UE 事件表** E01–E12（产品唯一细表） |
+| **L-HF-14** | `research/handfeel/14_physical_impl_pins.md` | **现行实现钉**（旧 03/04/08 已删） |
 | **L-AX-02** | `research/art-ux/02_visual_spec.md` | 牌面/三态/背面/浮层色板 |
-| **L-AX-04** | `research/art-ux/04_animation_params.md` | 动画 ms / 缓动 / busy |
 | **L-AX-05** | `research/art-ux/05_antipatterns.md` | 禁止与慎用 |
 | **L-AX-06** | `research/art-ux/06_synthesis.md` | 一页实现序 + 常量 |
 | **L-HO-ART** | `docs/HANDOFF_ART_UX.md` | 实现交接与 §9 验收 |
@@ -150,11 +148,11 @@ H-* 假设未验证前不当「已测数据」
 | 标题 | 对应文件 |
 |------|----------|
 | ArtUX · 12_effective_sources_list.md | 本表 |
-| ArtUX · 08_impl_pins_r31.md | 实现钉 |
+| handfeel · 14_physical_impl_pins.md | 实现钉 |
 | ArtUX · 06_synthesis.md | 综合 |
-| ArtUX · 03_ue_event_table.md | UE 表 |
+| （已删）art-ux 03 UE 表 | 认 14 |
 | ArtUX · 02_visual_spec.md | 视觉规格 |
-| ArtUX · 04_animation_params.md | 动画参数 |
+| （已删）art-ux 04 参数 | 认 phys |
 | ArtUX · 09_self_consistency_audit.md | 自洽评估 |
 | ArtUX · 07_gap_audit.md | 反查 v2 |
 

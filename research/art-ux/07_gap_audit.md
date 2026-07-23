@@ -132,7 +132,7 @@
 | **S6** | 浮层按钮 safe-area：卡片 `padding-bottom: max(16px, env(...))` | 真机点不到 |
 | **S7** | 撤销后 free 变化：是否播 flip | 建议 **撤销不播翻**（瞬时 sync），防烦 |
 
-写入：`research/art-ux/08_impl_pins_r31.md`（本轮补）。
+写入：原 `08_impl_pins_r31.md`（**已删**；现行认 handfeel/14）。
 
 ---
 

@@ -188,7 +188,7 @@ M0-a 脚手架 + phone-frame 空场景
 - [x] Level01 规则债清零（平行剥 / 清桌胜 / 精简 stock）  
 - [x] 内容策略 D21 文档 + 代码一致  
 
-**缺口详表：** `docs/changelog/2026-07-22_gap_vs_notes.md`  
+**缺口详表：** 见 `docs/CURRENT.md` · `session_bugs`（旧 gap_vs_notes 已删）
 **内容定稿：** `docs/changelog/2026-07-22_content_single_infinite.md`
 
 ---

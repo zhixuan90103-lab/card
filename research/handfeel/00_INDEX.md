@@ -1,44 +1,57 @@
-# handfeel · 目录
+# 手感轨 · 目录
 
-| 文件 | 说明 | 状态 |
+**更新：** 2026-07-23  
+**状态：** 现行（钉）/ 检索关（意图计划）  
+**规范：** [`docs/DOC_CONVENTIONS.md`](../../docs/DOC_CONVENTIONS.md)  
+**项目入口：** [`docs/CURRENT.md`](../../docs/CURRENT.md) · [`docs/NOTES_PACK.md`](../../docs/NOTES_PACK.md)  
+**清理：** 2026-07-23 已删 fa_* 源卡、01–11/13 旧草案（见 [`NOTES_AUDIT`](../../docs/NOTES_AUDIT.md)）
+
+**NotebookLM：** poker类手感调优 · `b0897377-3dc5-48c2-bc98-554cb380d352`
+
+---
+
+## ★ 现行（先读这些）
+
+项目级白名单：[`docs/NOTES_PACK.md`](../../docs/NOTES_PACK.md)
+
+| 文档 | 状态 | 说明 |
 |------|------|------|
-| [00_gap_audit_and_plan_v1.md](./00_gap_audit_and_plan_v1.md) | 通用手感祖先 + 早期计划 | 归档 |
-| [01_feedback_animation_research_plan.md](./01_feedback_animation_research_plan.md) | **实现与校准计划 v1.2** | 检索归档 · 待 I/C |
-| [02_feedback_event_table.md](./02_feedback_event_table.md) | 事件表检索祖先 | 镜像 · 勿当真理 |
-| [03_research_synthesis.md](./03_research_synthesis.md) | Round A/B 综合 | ✅ 降权 |
-| [04_gap_audit_v1.md](./04_gap_audit_v1.md) | A/B 后反查 | ✅ |
-| [05_feel_spec.md](./05_feel_spec.md) | **可执行验收规格** | ✅ v0.2 |
-| [06_gap_audit_bp_v1.md](./06_gap_audit_bp_v1.md) | **B′ 后反查** | ✅ 必读 |
-| [07_round3_desk_research.md](./07_round3_desk_research.md) | 第三轮检索（C 向桌面封口） | ✅ |
-| [08_self_consistency_audit.md](./08_self_consistency_audit.md) | **自洽评估 4.0/5** | ✅ 必读 |
-| [09_physical_feel_research_plan.md](./09_physical_feel_research_plan.md) | 物理手感检索计划 **v1.2** | 检索关 · 待 POC |
-| [10_physical_ue_events.md](./10_physical_ue_events.md) | 物理 UE 事件草案 | ✅ v0.2 |
-| [11_physical_anim_params.md](./11_physical_anim_params.md) | 物理动画参数草案 | ✅ **v0.6** |
-| [13_physical_gap_audit.md](./13_physical_gap_audit.md) | 物理轨反查 | ✅ |
-| [14_physical_impl_pins.md](./14_physical_impl_pins.md) | **物理实现钉（POC）** | ✅ **v1.5** |
-| [15_drag_intent_research_plan.md](./15_drag_intent_research_plan.md) | **拖动意图识别 · 检索计划** | ✅ **v0.3 检索关** · 待 POC |
-| [16_drag_intent_gap_audit.md](./16_drag_intent_gap_audit.md) | **意图计划反查补漏** | ✅ **v1** |
-| [17_intent_event_table.md](./17_intent_event_table.md) | 意图事件表 | ✅ v0.1 |
-| [18_intent_features_params.md](./18_intent_features_params.md) | 意图特征/参数 | ✅ v0.1 假设 |
-| [19_intent_impl_pins.md](./19_intent_impl_pins.md) | **意图实现钉（已落地）** | ✅ v0.1 |
-| [20_intent_effective_sources_list.md](./20_intent_effective_sources_list.md) | **意图轨有效源 List**（调研+落地） | ✅ **v1** |
-| [../../docs/changelog/2026-07-23_drag_intent_drop_decode.md](../../docs/changelog/2026-07-23_drag_intent_drop_decode.md) | 松手解码/点选最近 实现纪要 | ✅ |
-| [../../docs/changelog/2026-07-23_session_bugs_and_fixes.md](../../docs/changelog/2026-07-23_session_bugs_and_fixes.md) | **问题/Bug 与调整总表** | ✅ |
-| [sources/intent_a_softkey_decoder.md](./sources/intent_a_softkey_decoder.md) | 软键盘 decoder | ✅ |
-| [sources/intent_a_ios_behavior.md](./sources/intent_a_ios_behavior.md) | iOS 键盘行为 | ✅ |
-| [sources/intent_b_fail_stories.md](./sources/intent_b_fail_stories.md) | 误触故事 8 | ✅ |
-| [sources/intent_c_game_drag.md](./sources/intent_c_game_drag.md) | 拖放 UX 竞品薄 | ✅ |
-| [../../docs/changelog/2026-07-23_match_exit_feel.md](../../docs/changelog/2026-07-23_match_exit_feel.md) | 飞出/跨侧 | ✅ |
-| [../../docs/changelog/2026-07-23_drag_handfeel.md](../../docs/changelog/2026-07-23_drag_handfeel.md) | 拖拽/牌心 | ✅ |
-| [../../docs/changelog/2026-07-23_tap_meet_select.md](../../docs/changelog/2026-07-23_tap_meet_select.md) | 点选飞入/抛角/选中 | ✅ |
-| [../../docs/changelog/2026-07-23_flip_input.md](../../docs/changelog/2026-07-23_flip_input.md) | 翻牌时机/动态/输入解锁 | ✅ |
-| [../../docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md](../../docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md) | 抽叠/层级/自动抽/蒙黑 | ✅ |
-| [12_effective_sources_list.md](./12_effective_sources_list.md) | **有效来源 List** | ✅ |
-| [sources/](./sources/) | 源卡 fa_* / **pf_*** | ✅ |
+| [14_physical_impl_pins.md](./14_physical_impl_pins.md) | ✅ v1.5 **L1** | 物理手感钉 |
+| [19_intent_impl_pins.md](./19_intent_impl_pins.md) | ✅ **L1 已落地** | 拖松手 + 点选 |
+| [20_intent_effective_sources_list.md](./20_intent_effective_sources_list.md) | ✅ | 意图有效源 |
+| [12_effective_sources_list.md](./12_effective_sources_list.md) | ✅ v3 | 物理有效源目录 |
+| [session_bugs](../../docs/changelog/2026-07-23_session_bugs_and_fixes.md) | ✅ **L3** | 问题/调整总表 |
+| [18](./18_intent_features_params.md) · [17](./17_intent_event_table.md) | 辅 | 以 phys / 19 为准 |
 
+**代码第一手：** `src/render/cards.ts` · `phys.ts` · `src/core/rules.ts` · `src/main.ts`
 
-**唯一 UE 源：** [`../art-ux/03_ue_event_table.md`](../art-ux/03_ue_event_table.md) **v1.2**  
-**参数 / 钉：** art-ux `04` v0.2 · art-ux `08`  
-**实现认序：** art-ux/08 → 03 → 04 → handfeel/05 → **handfeel/08**  
+---
 
-**NotebookLM：** **poker类手感调优** · `b0897377-3dc5-48c2-bc98-554cb380d352`（**35 sources ready** · 见 `12` v2）
+## 意图检索（关 · 只读）
+
+| 文档 | 说明 |
+|------|------|
+| [15_drag_intent_research_plan.md](./15_drag_intent_research_plan.md) | 拖意图计划 v0.3 **检索关** |
+| [16_drag_intent_gap_audit.md](./16_drag_intent_gap_audit.md) | 意图计划反查 |
+
+---
+
+## 源卡 `sources/`（精简后）
+
+| 前缀 | 含义 | 状态 |
+|------|------|------|
+| `intent_*` | 拖意图 A/B/C | ✅ 支撑 19/20 |
+| `pf_*` | 物理检索史 | ⚠️ 原则可考古；参数认 phys |
+
+**已删除：** 全部 `fa_*`（早期反馈轮，ms 对 phys 无效）
+
+---
+
+## 相关 changelog（仍在）
+
+| 文档 | 说明 |
+|------|------|
+| [drawzone_z_autodraw_dim](../../docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md) | 抽叠 / z / 自动抽 / dim |
+| [drag_intent_drop_decode](../../docs/changelog/2026-07-23_drag_intent_drop_decode.md) | 松手解码 |
+
+（原 match_exit / drag_handfeel / tap_meet / flip 分条 **已删**，结论在 **14** + session_bugs。）

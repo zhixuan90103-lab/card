@@ -1,39 +1,29 @@
-# 有效来源 List · 拖动意图识别（× iOS 输入法范式）
+# 有效来源 List · 拖动意图识别
 
-**整理日期：** 2026-07-23 · **v1**  
+**更新：** 2026-07-23 · **v1.1（规范整理）**  
+**状态：** 现行  
 **Notebook：** poker类手感调优 · `b0897377-3dc5-48c2-bc98-554cb380d352`  
-**索引：** `research/handfeel/00_INDEX.md`  
-**关联总表：** [`12_effective_sources_list.md`](./12_effective_sources_list.md)（物理/旧轨手感）
+**入口：** [`docs/CURRENT.md`](../../docs/CURRENT.md) · [`docs/NOTES_PACK.md`](../../docs/NOTES_PACK.md)  
+**钉：** [`19_intent_impl_pins.md`](./19_intent_impl_pins.md)  
+**物理有效源：** [`12_effective_sources_list.md`](./12_effective_sources_list.md)
 
 **产品滤镜：**
 
 ```text
-重点 = 拖消更容易「到位就触发」+ 手机少选错
-不做 = 改 canMatch 规则 · 滑词全路径 DP · 远处乱吸 · 重开 meet/exit 参数
-引擎 = Pixi pointer + design 坐标 · 393×852
-代码第一手 = dropMatchTarget / pickCard(nearest) · main.ts 松手/点选
+重点 = 拖消「到位就触发」+ 手机少选错
+不做 = 改 canMatch · 滑词 DP · 远处乱吸 · 重开 meet/exit
+L0 = dropMatchTarget / pickCard · main.ts · phys.ts
 ```
-
-**证据等级：**
-
-| 级 | 含义 |
-|----|------|
-| **S** | 公开论文 / 权威 UX 方法文 |
-| **A** | 成熟 UX 指南 / 可复现产品行为摘要 |
-| **L** | 本项目计划·反查·源卡·实现钉·代码 |
-| **C** | 会话调研合成（已沉淀进 L 源卡） |
 
 **纪律：**
 
 ```text
-POC/实现认序：L-IT-19 → L-IT-18 → L-IT-17 → 代码 rules/main/phys
-外源只撑「噪声触点 + 合法先验 + 容差/磁吸边界」
-禁止：苹果键盘破解、用历史改规则、非 free 放大可点
-噪声：整词 ShapeWriter 复现、预测条多步确认打断拖消
+认序：代码 > 19 钉 > CURRENT > 本表
+外源只撑抽象（噪声触点 + 合法先验 + 容差）
+NLM 优先 NOTES_PACK 白名单，勿重复灌 15/16 全文
 ```
 
-**一句话：**  
-意图轨外源借 **软键盘 decoder + DnD 容差** 的抽象；落地认 **L-IT-19 + `dropMatchTarget`**。
+**一句话：** 外源借软键盘 decoder + DnD 容差；落地认 **19 + 代码**。
 
 ---
 
@@ -86,11 +76,12 @@ POC/实现认序：L-IT-19 → L-IT-18 → L-IT-17 → 代码 rules/main/phys
 
 | 批 | 内容 | Notebook |
 |----|------|----------|
-| **P0** | 实现钉 19 + 参数 18 + 事件 17 + 本表 | **必收** |
-| **P1** | 计划 15 · 反查 16 · changelog | 必收 |
-| **P2** | 源卡 intent_a/b/c | 必收 |
-| **P3** | 外源 URL（Goodman / NN DnD） | 建议收 |
-| **P4** | 会话长文 | 不入库；已压进源卡 |
+| **P0** | 钉 19 + 本表摘要 + session_bugs + CURRENT | **NLM 必收** |
+| **P1** | 参数 18（以 phys 覆盖）· 实现 changelog | 建议 |
+| **P2** | 源卡 intent_a/b/c | 建议；已有则不重复 |
+| **P3** | 外源 Goodman / NN DnD | 各 1 条即可 |
+| **P4** | 计划 15 · 反查 16 全文 | **可不入库**（检索关） |
+| — | 会话长文 / fa_* / 旧 10/11 | **不入库** |
 
 ---
 

@@ -49,6 +49,8 @@ function faceAssetUrl(suit: Suit, rank: Rank): string {
 const BACK_URL = `/cards/Card_B.png?v=${ASSET_VER}`;
 
 const textureCache = new Map<string, Texture>();
+/** CPU-side images survive WebGL context loss; GPU textures do not. */
+const imageCache = new Map<string, HTMLImageElement>();
 let loaded = false;
 let bakeResolution = 2;
 
@@ -60,6 +62,18 @@ function loadHtmlImage(url: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error(`Failed to load ${url}`));
     img.src = url;
   });
+}
+
+function destroyGpuTextures(): void {
+  for (const tex of textureCache.values()) {
+    try {
+      tex.destroy(true);
+    } catch {
+      /* already invalid after context loss */
+    }
+  }
+  textureCache.clear();
+  loaded = false;
 }
 
 /**
@@ -114,14 +128,7 @@ function bakeCardTexture(
   return texture;
 }
 
-/** Load + bake all card textures (idempotent). */
-export async function loadCardFaceAssets(): Promise<void> {
-  if (loaded) return;
-
-  // Always bake at 3× design pixels (56×74 → 168×222). Cheap (27 textures)
-  // and stays sharp under phone-frame CSS upscale on desktop.
-  bakeResolution = 3;
-
+function assetJobs(): { key: string; url: string }[] {
   const jobs: { key: string; url: string }[] = [
     { key: CARD_BACK_KEY, url: BACK_URL },
   ];
@@ -133,16 +140,42 @@ export async function loadCardFaceAssets(): Promise<void> {
       });
     }
   }
+  return jobs;
+}
+
+/**
+ * Load HTML images (CPU) + bake GPU textures.
+ * Idempotent while `loaded`; use `reloadCardFaceAssets` after GL context loss.
+ */
+export async function loadCardFaceAssets(): Promise<void> {
+  if (loaded) return;
+
+  // Always bake at 3× design pixels (56×74 → 168×222).
+  bakeResolution = 3;
+  const jobs = assetJobs();
 
   await Promise.all(
     jobs.map(async ({ key, url }) => {
-      const img = await loadHtmlImage(url);
+      let img = imageCache.get(key);
+      if (!img) {
+        img = await loadHtmlImage(url);
+        imageCache.set(key, img);
+      }
       const tex = bakeCardTexture(img, CARD_W, CARD_H, bakeResolution);
       textureCache.set(key, tex);
     }),
   );
 
   loaded = true;
+}
+
+/**
+ * Design 19: after WebGL context loss, GPU textures are dead.
+ * Drop them and re-bake from CPU image cache (no network if warm).
+ */
+export async function reloadCardFaceAssets(): Promise<void> {
+  destroyGpuTextures();
+  await loadCardFaceAssets();
 }
 
 export function getFaceTexture(suit: Suit, rank: Rank): Texture {

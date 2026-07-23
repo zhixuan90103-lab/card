@@ -1,7 +1,9 @@
 # Changelog · 拖动意图：松手解码 / 少选错 / 趋势与重叠（2026-07-23）
 
-**状态：** 已实现  
-**钉文：** `research/handfeel/19_intent_impl_pins.md` · 有效源 `20_intent_effective_sources_list.md`  
+**更新：** 2026-07-23  
+**状态：** 现行 · 已实现  
+**权威级：** L4  
+**钉文（L1）：** `research/handfeel/19_intent_impl_pins.md` · 源 `20`  
 **代码：** `src/core/rules.ts` · `src/main.ts` · `src/render/phys.ts` · `src/core/rules.test.ts`
 
 ---

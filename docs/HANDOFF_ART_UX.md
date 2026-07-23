@@ -1,23 +1,25 @@
 # 交接文案 · 美术优化 + 体验优化
 
-**日期：** 2026-07-22  
-**用途：** 新窗口 / 新会话 **只做观感与手感**，不要重做规则与配点。  
+**更新：** 2026-07-23  
+**状态：** 现行  
+**权威级：** L1 交接  
+**用途：** 新窗口 **只做观感与手感**，不要重做规则与配点。  
 **仓库：** `/Users/wangzhixuan/Documents/Threejs_Work/Card`  
-**本地预览：** `npm run dev` → 通常 `http://127.0.0.1:5173/`  
+**预览：** `npm run dev`
 
-**美术方向（用户已点头「20 很接近」）：**  
-→ 读 **`docs/design/18_art_direction_lock_v20.md`**  
-→ 主参考图：`images/20.jpg`（奶油青绿 · 柔和扁平休闲）  
+**美术方向：** [`design/18_art_direction_lock_v20.md`](./design/18_art_direction_lock_v20.md)  
+主参考：`images/20.jpg`（奶油青绿 · 柔和扁平休闲）
+
+> 全局入口：[`CURRENT.md`](./CURRENT.md) · [`NOTES_PACK.md`](./NOTES_PACK.md)
 
 ---
 
 ## 1. 一句话产品（已定稿）
 
-手机框内的 **层叠同点配对**（非接龙）：  
-固定满槽几何 + **同点同色（仅♥/♠）** + 抽牌压栈 + **清桌即胜** + **单关无限 seed**；  
-锁是 **路径锁**（L1 瓶颈，钥匙稀缺）；难度 **困难 / 每 3 局极难**。
-
-**体验主轴仍是顿悟**（要想消序 / 要不要抽），美术与动效要 **服务可读与反馈**，不要抢规则。
+手机框内 **层叠同点配对**（非接龙）：  
+同点同色（仅♥/♠）+ 抽牌压栈 + **清桌即胜** + **单关无限 seed**；  
+路径锁（钥匙稀缺）；难度困难 / 每 3 局极难。  
+体验主轴 **顿悟**；美术服务可读与反馈，不抢规则。
 
 ---
 
@@ -25,21 +27,20 @@
 
 | 顺序 | 路径 | 为什么 |
 |------|------|--------|
-| **1** | **`docs/changelog/2026-07-22_full_roundup.md`** | **现行规则与决策权威总表（D10–D26）** |
-| 2 | `docs/design/03_experience_and_innovation.md` | 顿悟 / 雷区 / 体验合同 |
-| 3 | `docs/design/05_board_layout_consensus.md` | 牌尺寸、漏边、层级、free=亮面 |
-| 4 | `docs/design/11_viewport_iphone15.md` | 393×852、phone-frame、真机清单 |
-| 5 | `docs/design/07_glossary.md` | 术语：勿写「三角塔/接龙」 |
-| 6 | `docs/design/13_mvp_plan_and_todolist.md` | Phase E / D7 美术可选项 |
-| 7 | **`docs/design/17_art_ux_research_plan.md`** | **美术·UI/UE·动画·手感检索计划（规格从哪来）** |
-| 8 | `research/art-ux/00_INDEX.md` | 检索成果进度；R2 三表后再改像素 |
+| **1** | [`CURRENT.md`](./CURRENT.md) · [`NOTES_PACK.md`](./NOTES_PACK.md) | 现行入口 / 白名单 |
+| **2** | [`design/18`](./design/18_art_direction_lock_v20.md) | **美术方向锁** |
+| 3 | [`handfeel/14`](../research/handfeel/14_physical_impl_pins.md) · [`19`](../research/handfeel/19_intent_impl_pins.md) | 手感 / 意图钉 |
+| 4 | [`design/03`](./design/03_experience_and_innovation.md) | 顿悟 / 雷区 |
+| 5 | [`design/05`](./design/05_board_layout_consensus.md) | 牌尺寸、漏边、层级 |
+| 6 | [`design/11`](./design/11_viewport_iphone15.md) | 393×852 |
+| 7 | [`art-ux/00_INDEX`](../research/art-ux/00_INDEX.md) | 检索成果（规格史） |
+| 8 | [`full_roundup`](./changelog/2026-07-22_full_roundup.md) | 规则向总表（按需） |
 
-**路径锁研究（仅当动锁相关 UI 文案时）：** `research/path-lock/00_INDEX.md`  
+**路径锁 UI 文案时：** `research/path-lock/00_INDEX.md`  
+**不必重读：** 技术选型、配点生成长文、已归档 handfeel 过程 changelog。
 
-**不必重读：** 技术选型 Three vs Pixi、配点生成长文（除非改文案涉及规则）。
-
-> **检索 v1.2（2026-07-22 反查修订）：** 规格 `research/art-ux/02–05`；**实现必读** `08_impl_pins_r31.md` + 反查 `07` v2。  
-> 参数为 **H-\* 假设**（消 280 / 翻 160 / 选中 y-4）；禁止再开外搜周。R4 改 `render/ui` → vitest + changelog + 勾 §9；真机归 R5。
+> **实现必读：** [`handfeel/14`](../research/handfeel/14_physical_impl_pins.md) · [`19`](../research/handfeel/19_intent_impl_pins.md) + `phys.ts`（旧 art-ux 03/04/08 已删）。  
+> 美术方向：[`design/18`](./design/18_art_direction_lock_v20.md)。
 
 ---
 
@@ -82,7 +83,7 @@ src/
 
 **玩法入口：** 单关无限；顶栏 `第 N 局 · 困难|极难 · 锁×k · #seed`。
 
-**近期 changelog：** `docs/changelog/2026-07-22_drag_match_pile_shadow.md`
+**近期 changelog：** [`session_bugs`](./changelog/2026-07-23_session_bugs_and_fixes.md) · [`drawzone_z`](./changelog/2026-07-23_drawzone_z_autodraw_dim.md)
 
 ---
 
@@ -171,7 +172,7 @@ D. 真机与无障碍点按（viewport + 11 清单）
 - [ ] phone-frame 下无裁切、无严重点偏  
 - [ ] （目标）iPhone 15 Safari 勾 `11` §6 若干关键项  
 - [x] 未改坏：`npx vitest run` core 规则测绿  
-- [x] changelog：`docs/changelog/2026-07-22_drag_match_pile_shadow.md`  
+- [x] changelog：结论见 `session_bugs` / `drawzone_z`（旧 drag_match 条已删）
 
 
 ---

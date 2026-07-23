@@ -1,9 +1,11 @@
-# 2026-07-23 · iOS 真机上线与适配总整理（项目笔记权威）
+# 2026-07-23 · iOS 真机上线与适配总整理
 
-**状态：** 已实现 · 已推 `origin/main`（含 `098739b` 等）  
+**更新：** 2026-07-23  
+**状态：** 现行 · 已实现  
+**权威级：** **L4** 总整理（设计权威仍是 L2 `design/19` · D28）  
 **锚点机型：** **iPhone 15 / 15 Pro**（逻辑 **393×852** @3x）  
-**范围：** Capacitor 壳、震动、真机布局、动画裁切、画面放大、iPhone-only 配置  
-**读者：** 新会话优先读本文 + `ios_iphone_checklist` + `native_shell_layout`
+**范围：** Capacitor 壳、震动、真机布局、动画裁切、画面放大、iPhone-only、**后台 rehydrate**  
+**读者：** [`CURRENT`](../CURRENT.md) → 本文 + [`design/19`](../design/19_ios_renderer_lifecycle.md) + checklist
 
 ---
 
@@ -83,6 +85,17 @@
 | 真机隐藏调参 | ✅ |
 | 分条 | `2026-07-23_ios_iphone_checklist.md` |
 
+### 2.6 后台恢复（D28 · 设计而非补丁）
+
+| 项 | 说明 |
+|----|------|
+| 现象 | 回前台只见米色底，牌/WebGL 空白 |
+| 设计 | **视图可丢弃**；`GameView.rehydrate(state)`；禁止 soft render |
+| 信号 | Capacitor `appStateChange` + visibility + pageshow |
+| 输入 | **每次** rehydrate 后 rebind 新 canvas |
+| 权威 | [`design/19_ios_renderer_lifecycle.md`](../design/19_ios_renderer_lifecycle.md) |
+| 实现笔记 | [`2026-07-23_renderer_rehydrate.md`](./2026-07-23_renderer_rehydrate.md) |
+
 ---
 
 ## 3. 日常打包
@@ -103,9 +116,12 @@ Xcode：选 **iPhone 15 Pro** → Signing → Run。
 | `capacitor.config.ts` | Cap 配置 |
 | `ios/` | 原生工程（已入库） |
 | `src/native/haptics.ts` | 震动 |
+| `src/native/appLifecycle.ts` | 前后台信号（Cap App + web） |
+| `src/render/gameView.ts` | 易失视图 · rehydrate |
+| `src/render/cardAssets.ts` | CPU 图缓存 + GPU 重烘焙 |
 | `src/viewport/shellLayout.ts` | 真机壳布局 |
 | `src/viewport/design.ts` | 393×852 + FX buffer |
-| `src/render/app.ts` | Pixi buffer + 缩放 |
+| `src/render/app.ts` | 单次 Pixi Application |
 | `src/main.ts` | native class · 震动 · 后台 ticker · 隐藏调参 |
 | `src/styles.css` | native / HUD safe-area / overflow |
 | `vite.config.ts` | `base: './'` |
@@ -116,7 +132,9 @@ Xcode：选 **iPhone 15 Pro** → Signing → Run。
 
 | 文档 | 主题 |
 |------|------|
-| **本文** | **iOS 总整理** |
+| **本文** | iOS 总整理（L4） |
+| [`design/19`](../design/19_ios_renderer_lifecycle.md) | **D28 生命周期（L2 权威）** |
+| `2026-07-23_renderer_rehydrate.md` | rehydrate 实现 |
 | `2026-07-23_capacitor_ios.md` | Cap + 震动 |
 | `2026-07-23_native_shell_layout.md` | 黑边/压扁/FX 裁切 |
 | `2026-07-23_ios_iphone_checklist.md` | 打包与适配清单 |
@@ -129,7 +147,8 @@ Xcode：选 **iPhone 15 Pro** → Signing → Run。
 - App Icon 全套与商店截图  
 - 隐私政策 / TestFlight  
 - StatusBar 插件精细控制  
-- 进后台存局（现仅停 ticker）  
+- 进后台 **局内存盘**（可选）；回前台 **rehydrate 已落地**（D28）  
+
 - Pro Max 专项（仅 contain，不改设计）  
 
 ---

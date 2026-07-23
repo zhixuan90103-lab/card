@@ -22,11 +22,8 @@ import {
   startNewRun,
   type RunDeal,
 } from './data/levels';
-import { createPixiApp } from './render/app';
-import { loadCardFaceAssets } from './render/cardAssets';
-import { CardRenderer } from './render/cards';
+import { GameView } from './render/gameView';
 import { PHYS } from './render/phys';
-import { PileTray } from './render/pileTray';
 import { Hud } from './ui/hud';
 import { mountTrayTuner } from './ui/trayTuner';
 import {
@@ -36,8 +33,10 @@ import {
   hapticSuccess,
   isNativeApp,
 } from './native/haptics';
+import { watchAppLifecycle } from './native/appLifecycle';
 import { screenToDesign } from './viewport/design';
 import { getPhoneFrameEl } from './viewport/phoneFrame';
+import { applyShellLayout } from './viewport/shellLayout';
 
 function freeIdSet(state: GameState): Set<CardId> {
   return new Set(freeCardIds(state));
@@ -94,15 +93,21 @@ async function main(): Promise<void> {
 
   syncPileRects(session);
 
-  const { app, world, resume, destroy } = await createPixiApp();
-  await loadCardFaceAssets();
+  /**
+   * D28 / design 19: view is disposable.
+   * `cards` / `app` / `canvas` rebind after every rehydrate.
+   * Pointer listeners always attach to the *current* canvas.
+   */
+  let view = await GameView.mount(session.getState());
+  let cards = view.cards;
+  let app = view.app;
+  let canvas = view.canvas;
 
-  // Tray under draw piles, then cards on top
-  const pileTray = new PileTray();
-  world.addChild(pileTray.root);
-  const cards = new CardRenderer();
-  world.addChild(cards.root);
-  cards.bootstrap(session.getState());
+  const rebindView = () => {
+    cards = view.cards;
+    app = view.app;
+    canvas = view.canvas;
+  };
 
   const hudHost = document.getElementById('hud');
   if (!hudHost) throw new Error('#hud missing');
@@ -178,48 +183,6 @@ async function main(): Promise<void> {
     cards.syncSelectIdle(st, app.ticker);
     refreshHud();
   };
-
-  /**
-   * iOS WKWebView: after background, GL buffer / viewport often blank or 0×0.
-   * Resume shell + force render + re-sync sprites (textures still in CPU cache).
-   */
-  const resumeFromBackground = () => {
-    try {
-      app.ticker.start();
-    } catch {
-      /* ignore */
-    }
-    resume();
-    refresh();
-    requestAnimationFrame(() => {
-      resume();
-      refresh();
-    });
-    setTimeout(() => {
-      resume();
-      refresh();
-    }, 100);
-    setTimeout(() => {
-      resume();
-      refresh();
-    }, 300);
-  };
-
-  const onVisibility = () => {
-    if (document.hidden) {
-      // Pause animations only — do not collapse layout to 0
-      try {
-        app.ticker.stop();
-      } catch {
-        /* ignore */
-      }
-    } else {
-      resumeFromBackground();
-    }
-  };
-  document.addEventListener('visibilitychange', onVisibility);
-  window.addEventListener('pageshow', resumeFromBackground);
-  window.addEventListener('focus', resumeFromBackground);
 
   /**
    * Physical clear: meet → exitPairShared → flip newly free (14 S2/S3).
@@ -408,7 +371,6 @@ async function main(): Promise<void> {
   refresh();
 
   const frame = getPhoneFrameEl();
-  const canvas = app.canvas as HTMLCanvasElement;
 
   const DRAG_THRESHOLD = PHYS.dragThreshold;
 
@@ -791,22 +753,91 @@ async function main(): Promise<void> {
     }
   };
 
-  canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
-  canvas.addEventListener('pointermove', onPointerMove, { passive: false });
-  canvas.addEventListener('pointerup', onPointerUp, { passive: false });
-  canvas.addEventListener('pointercancel', onPointerCancel, { passive: false });
-  canvas.addEventListener(
-    'touchmove',
-    (e) => e.preventDefault(),
-    { passive: false },
-  );
+  /** Pointer must re-bind after every rehydrate (new WebGL canvas). */
+  let unbindPointer: (() => void) | null = null;
+  const bindPointer = (el: HTMLCanvasElement) => {
+    unbindPointer?.();
+    const onTouchMove = (e: TouchEvent) => e.preventDefault();
+    el.addEventListener('pointerdown', onPointerDown, { passive: false });
+    el.addEventListener('pointermove', onPointerMove, { passive: false });
+    el.addEventListener('pointerup', onPointerUp, { passive: false });
+    el.addEventListener('pointercancel', onPointerCancel, { passive: false });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    unbindPointer = () => {
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('pointermove', onPointerMove);
+      el.removeEventListener('pointerup', onPointerUp);
+      el.removeEventListener('pointercancel', onPointerCancel);
+      el.removeEventListener('touchmove', onTouchMove);
+    };
+  };
+  bindPointer(canvas);
+
+  /**
+   * D28 / design 19 — renderer lifecycle:
+   * suspend → stop ticker; drop in-flight drag; never trust GPU
+   * resume  → FULL rehydrate (new WebGL + textures + CardRenderer) + rebind input
+   * Soft re-render is forbidden after context loss.
+   */
+  let resumeBusy = false;
+  let resumeQueued = false;
+
+  const afterRehydrate = () => {
+    rebindView();
+    bindPointer(canvas);
+    applyShellLayout();
+    activeDrag = null;
+    refresh();
+  };
+
+  const runResumeRehydrate = () => {
+    // Native may call resume while document.hidden is still true for one frame —
+    // do not gate on document.hidden here (appLifecycle already decided foreground).
+    if (resumeBusy) {
+      resumeQueued = true;
+      return;
+    }
+    resumeBusy = true;
+    resumeQueued = false;
+    void (async () => {
+      try {
+        syncPileRects(session);
+        await view.rehydrate(session.getState());
+        afterRehydrate();
+      } catch (e) {
+        console.error('[lifecycle] rehydrate failed', e);
+        try {
+          await new Promise((r) => setTimeout(r, 120));
+          await view.rehydrate(session.getState());
+          afterRehydrate();
+        } catch (e2) {
+          console.error('[lifecycle] rehydrate retry failed', e2);
+        }
+      } finally {
+        resumeBusy = false;
+        if (resumeQueued) {
+          resumeQueued = false;
+          runResumeRehydrate();
+        }
+      }
+    })();
+  };
+
+  const lifecycle = watchAppLifecycle({
+    onSuspend: () => {
+      activeDrag = null;
+      view.suspend();
+    },
+    onResume: () => {
+      runResumeRehydrate();
+    },
+  });
 
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('pageshow', resumeFromBackground);
-      window.removeEventListener('focus', resumeFromBackground);
-      destroy();
+      lifecycle.dispose();
+      unbindPointer?.();
+      view.destroy();
     });
   }
 

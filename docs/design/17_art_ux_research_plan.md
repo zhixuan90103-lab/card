@@ -1,9 +1,13 @@
 # 17 · 美术画面 · UI/UE · 纸牌动画 · 操作手感 · 检索计划
 
-**状态：** ✅ **规格结案（可 R4）** · ⚠️ **参数为假设待 POC** · 真机归 R5  
-**日期：** 2026-07-22 · **v1.2**（反查 v2 修订）  
-**成果目录：** `research/art-ux/`  
-**必读序：** [`09_self_consistency_audit.md`](../../research/art-ux/09_self_consistency_audit.md) → [`07`](../../research/art-ux/07_gap_audit.md) v2 → [`08_impl_pins_r31.md`](../../research/art-ux/08_impl_pins_r31.md) → [`06`](../../research/art-ux/06_synthesis.md)  
+**状态：** **检索结案 · 归档向**（R4 实现已发生；参数以 phys/14 为准）  
+**日期：** 2026-07-22 · **v1.2** · **导航补丁 2026-07-23**  
+**权威级：** L5 计划史  
+**现行：** [`docs/CURRENT.md`](../CURRENT.md) · handfeel **14/19** · design **18**（美术方向）  
+**注意：** 同号另有 `17_art_direction_research.md`（方向调研）；方向锁以 **18** 为准  
+**成果目录：** `research/art-ux/` 
+**必读序（现行）：** [`handfeel/14`](../../research/handfeel/14_physical_impl_pins.md) → [`CURRENT`](../CURRENT.md)  
+**本计划史：** art-ux `09` → `07` → `06`（`03/04/08` 已删） 
 **执行交接：** `docs/HANDOFF_ART_UX.md`
 
 ---
@@ -177,27 +181,18 @@ R5  真机收口      ⬜ 11 §6 · 定稿列
 | H-draw | 抽瞬时 | 默认 |
 | H-label | 保留区标签 | 默认 |
 
-细项与时序：**`research/art-ux/08_impl_pins_r31.md`**
+细项与时序：**`research/handfeel/14_physical_impl_pins.md`** + `phys.ts`
 
 ---
 
 ## 7. 成果目录
 
 ```text
-research/art-ux/
+research/art-ux/          # 检索归档（03/04/08 已删）
   00_INDEX.md
-  01_baseline_notes.md      # R0（录屏债注明）
-  02_visual_spec.md         # v0.1
-  03_ue_event_table.md      # v1.2（拖放合流）
-  04_animation_params.md    # v0.1
-  05_antipatterns.md
-  06_synthesis.md           # v2
-  07_gap_audit.md           # v2 反查权威
-  08_impl_pins_r31.md       # R3.1 实现钉
-  09_self_consistency_audit.md
-  12_effective_sources_list.md  # 有效源 + NotebookLM 入库状态
-  10_render_clarity_vector_feel.md  # 清晰度/矢量感（Pixi 下路径）
-  sources/r1_*.md             # 5 卡；品类偏通用
+  01 · 02 · 05 · 06 · 07 · 09 · 10 · 12
+  sources/r1_*.md
+research/handfeel/14      # 现行实现钉（替代旧 08）
 ```
 
 ---
@@ -274,7 +269,7 @@ research/art-ux/
 
 ```text
 按 docs/design/17_art_ux_research_plan.md v1.2 做 R4 实现。
-必读 research/art-ux/08_impl_pins_r31.md 与 07_gap_audit.md v2。
+必读 research/handfeel/14 与 docs/CURRENT.md。
 规格：02–05；参数是 H-* 假设（match 280、flip 160、选中 y-4 无 scale）。
 只改 render/ui/styles；不改 core 配点/胜负；Free=亮面；D17。
 完成后 vitest 绿、changelog、勾 HANDOFF §9；回写 04 定稿列。

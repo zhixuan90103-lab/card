@@ -1,15 +1,25 @@
 # 交接文档 · 配对牌实现开工
 
-**日期：** 2026-07-21  
-**交接目的：** 新窗口 / 新会话 **只做实现**，不再做选型检索与产品发散。  
-**仓库根目录：** `/Users/wangzhixuan/Documents/Threejs_Work/Card`  
-（当前几乎只有 `docs/` + `research/`，**尚无业务 `src/` 工程**。）
+**更新：** 2026-07-23  
+**状态：** 现行  
+**权威级：** L1 交接  
+**交接目的：** 新窗口 **只做实现**，不再做选型检索与产品发散。  
+**仓库：** `/Users/wangzhixuan/Documents/Threejs_Work/Card`（根即 app）
+
+> **强制顺序：**  
+> 1. [`CURRENT.md`](./CURRENT.md)  
+> 2. [`NOTES_PACK.md`](./NOTES_PACK.md)  
+> 3. 相关钉 / design → 代码  
+>
+> 手感：[`handfeel/14`](../research/handfeel/14_physical_impl_pins.md) · [`19`](../research/handfeel/19_intent_impl_pins.md)  
+> 问题：[`session_bugs`](./changelog/2026-07-23_session_bugs_and_fixes.md)  
+> 后台：[`design/19`](./design/19_ios_renderer_lifecycle.md)（**D28**）
 
 ---
 
 ## 1. 一句话项目
 
-欧美手机、机制向纸牌皮：**4×5 底层 + 向上层叠遮盖**（类羊了个羊，**不是**三角 Pyramid Solitaire）+ **同点数手动点两张消** + **随时抽牌压栈** + 抽出叠洗回 + **清谜题区胜利**；体验主轴 **顿悟**（要想消序/抽序，不是狂抽、不是接龙）。
+欧美手机、机制向纸牌皮：**4×5 底层 + 向上层叠遮盖**（类羊了个羊，**不是**三角 Pyramid）+ **同点同色手动配对**（点选+拖放）+ **随时抽牌压栈** + 洗回 + **清谜题区胜利**；体验主轴 **顿悟**。
 
 ---
 
@@ -19,24 +29,16 @@
 |----|------|
 | D04 | 谜题区 = 4×5 底 + 分层遮盖 |
 | D05–D09 | 同点配对；改选；随时抽；抽出叠仅顶可配；洗回 |
-| D10 / D10b / D26 | 清桌胜；库=工具；清桌回收；残局 trim 多余库牌 |
+| D10 / D10b / D26 | 清桌胜；库=工具；清桌回收；残局 trim |
 | D12 | **无默认 timer** |
-| D19–D25 | 禁平行剥；精简 stock；单关无限；红黑配对；难度档；钥匙稀缺 2–4；库钥匙靠前 |
-| **D27 / D27b** | **公平钥匙** + **Near-miss 发局偏好**（稀缺优先 3～4、前半进度） | `d27_fair_keys` · `near_miss_p0` |
-| **D15** | 主渲染 **PixiJS 8.19.x** 单引擎；HUD 用 **DOM** |
+| D15–D17 | Pixi8 单引擎 + DOM HUD；393×852；逻辑 isFree 拾取 |
+| D19–D25 | 禁平行剥；精简 stock；单关无限；红黑；难度档；钥匙稀缺 |
+| **D27 / D27b** | 公平钥匙 + Near-miss 发局 |
+| **D28** | **渲染生命周期**：回前台 **整视图 rehydrate**（非 soft ticker） |
 
-| **D16** | 设计分辨率 **393×852**；PC **phone-frame letterbox**；真机 iPhone 壳见 iOS 总整理 |
-| **D17** | 可点集 = **逻辑 isFree + AABB**（引擎不单独决定合法性） |
+全文：[`design/04_decisions_log.md`](./design/04_decisions_log.md)
 
-**Level01 总整理：** `docs/changelog/2026-07-22_full_roundup.md`  
-**操作/表现：** `docs/changelog/2026-07-22_drag_match_pile_shadow.md`  
-**钥匙/可解：** `docs/changelog/2026-07-22_d27_fair_keys.md`  
-**差一点体感：** `docs/changelog/2026-07-22_near_miss_p0.md`  
-**iOS 真机：** `docs/changelog/2026-07-23_ios_roundup.md`
-
-**否决：** Three 作主渲染、双引擎、仅靠 Chrome Device Mode 当验收、默认 timer、接龙核心。
-
-全文：`docs/design/04_decisions_log.md`
+**否决：** Three 主渲染、双引擎、Chrome Device Mode 当验收、默认 timer、接龙核心。
 
 ---
 
@@ -44,18 +46,15 @@
 
 | 顺序 | 路径 | 为什么 |
 |------|------|--------|
-| **1** | **`docs/design/13_mvp_plan_and_todolist.md`** | **执行圣经：M0/M1 + Phase A～E Todo** |
-| 2 | `docs/design/08_prototype_scope.md` | 范围边界 |
-| 3 | `docs/design/02_game_rules.md` | 规则 v0.3 |
-| 4 | `docs/design/10_tech_decision.md` | 架构 / 目录 / 依赖 |
-| 5 | `docs/design/11_viewport_iphone15.md` | 视口 CSS / 真机清单 |
-| 6 | `docs/design/03_experience_and_innovation.md` | 顿悟验收话术 |
-| 7 | `docs/design/07_glossary.md` | 禁用「三角塔/接龙」等词 |
+| **1** | [`CURRENT.md`](./CURRENT.md) | 现行一页纸 |
+| **2** | [`NOTES_PACK.md`](./NOTES_PACK.md) | 有效笔记白名单 |
+| 3 | [`design/02`](./design/02_game_rules.md) · [`04`](./design/04_decisions_log.md) · [`05`](./design/05_board_layout_consensus.md) | 规则 / 决策 / 几何 |
+| 4 | handfeel **14** · **19** · session_bugs | 手感与近期问题 |
+| 5 | [`design/19`](./design/19_ios_renderer_lifecycle.md) | iOS 后台恢复（若动壳/渲染） |
+| 6 | [`design/13`](./design/13_mvp_plan_and_todolist.md) | MVP 勾选（历史 Phase 仍可参考） |
+| 7 | 代码 `src/` | L0 真相 |
 
-索引：`docs/00_INDEX.md` · 根说明：`README.md`
-
-**不必再读：** 完整 market 调研全库、tech-stack 噪声 notes（选型已结案）。  
-若卡引擎细节：优先 Pixi 官方 Events / Performance Tips（见 `research/tech-stack/12_effective_sources_list.md`）。
+**不必再读：** market 全库、tech-stack 噪声、已归档 changelog 过程条。
 
 ---
 
@@ -170,7 +169,7 @@ MAX_DPR       = 2 或 3
 - [ ] 2～3 人外放话术达标  
 - [~] 教学/顿悟引导加强（可选）  
 
-**缺口对齐：** `docs/changelog/2026-07-22_gap_vs_notes.md`  
+**缺口对齐：** 以 [`CURRENT`](./CURRENT.md) · [`session_bugs`](./changelog/2026-07-23_session_bugs_and_fixes.md) · 代码为准（旧 gap_vs_notes 已删）
 **内容定稿：** `docs/changelog/2026-07-22_content_single_infinite.md`  
 
 ---

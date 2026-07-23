@@ -1,16 +1,14 @@
-# 物理手感 · 实现钉 v1.5（POC 实机校准后）
+# 物理手感 · 实现钉 v1.5
 
-**日期：** 2026-07-23（v1.5 抽牌区 / 层级 / 自动抽动画 / 蒙黑）  
-**状态：** 拍板 · **POC 必遵** · 参数以代码 `src/render/phys.ts` + `CARD_Z` 为准  
-**权威链：** 需求钉 `09` → 事件 `10` → 参数 `11` → **本文** → 代码  
-**纪要：**  
-- `docs/changelog/2026-07-23_match_exit_feel.md`  
-- `docs/changelog/2026-07-23_drag_handfeel.md`  
-- `docs/changelog/2026-07-23_tap_meet_select.md`  
-- `docs/changelog/2026-07-23_flip_input.md`（v1.4）  
-- `docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md`（**v1.5**）
+**更新：** 2026-07-23  
+**状态：** 现行 · **L1 实现钉**  
+**权威级：** L1（冲突时 **代码** `phys.ts` / `cards.ts` / `CARD_Z` 优先）  
+**入口：** [`docs/CURRENT.md`](../../docs/CURRENT.md) · [`docs/NOTES_PACK.md`](../../docs/NOTES_PACK.md)  
+**规范：** [`docs/DOC_CONVENTIONS.md`](../../docs/DOC_CONVENTIONS.md)  
+**关联：** 意图钉 [`19`](./19_intent_impl_pins.md) · 问题总表 [`session_bugs`](../../docs/changelog/2026-07-23_session_bugs_and_fixes.md)  
+**纪要：** [`drawzone_z_autodraw_dim`](../../docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md) · [`session_bugs`](../../docs/changelog/2026-07-23_session_bugs_and_fixes.md)  
 
-> 未升格前：线上 art-ux/03 仍可能描述旧 flyAway；**新 POC 以本文 + 代码为准**。
+> **以本文 + `phys.ts` / `cards.ts` 为准。** 旧 art-ux 03/08 与 fa_* 源卡已删。
 
 ---
 

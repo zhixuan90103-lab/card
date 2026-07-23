@@ -16,23 +16,33 @@ export type PixiBundle = {
   app: Application;
   world: Container;
   resize: () => void;
-  /** Call when app returns from background (iOS WebGL blank fix) */
-  resume: () => void;
   destroy: () => void;
 };
 
+export type CreatePixiOpts = {
+  /**
+   * Called when WebGL reports context lost.
+   * Caller should schedule GameView.rehydrate (soft resume is forbidden).
+   */
+  onContextLost?: () => void;
+};
+
 /**
- * Mount Pixi into #game-canvas.
+ * Mount a fresh Pixi Application into #game-canvas.
  *
- * Layout: #phone-frame = 393×852; renderer = design + FX pads.
- * Resume: iOS often clears GL buffer or reports 0×0 VV while backgrounded —
- * `resume()` re-layouts, restarts ticker, and force-renders.
+ * One Application = one WebGL context lifetime.
+ * After suspend / context loss, do not patch this instance — destroy and create again.
  */
-export async function createPixiApp(): Promise<PixiBundle> {
+export async function createPixiApp(
+  opts: CreatePixiOpts = {},
+): Promise<PixiBundle> {
   applyShellLayout();
 
   const host = getCanvasHost();
   const frame = getPhoneFrameEl();
+  // Always start from a clean host (previous canvas may be dead/orphaned)
+  host.innerHTML = '';
+
   const app = new Application();
 
   const layoutScale = (): number => {
@@ -55,13 +65,11 @@ export async function createPixiApp(): Promise<PixiBundle> {
     resolution: frameResolution(),
     autoDensity: true,
     preference: 'webgl',
-    // Keep last frame when possible (helps some GPUs after brief suspend)
     powerPreference: 'high-performance',
     canvas: undefined,
   });
 
   const canvas = app.canvas as HTMLCanvasElement;
-  host.innerHTML = '';
   host.appendChild(canvas);
   canvas.style.display = 'block';
   canvas.style.position = 'absolute';
@@ -79,7 +87,10 @@ export async function createPixiApp(): Promise<PixiBundle> {
   world.position.set(FX_PAD_X, FX_PAD_Y);
   app.stage.addChild(world);
 
+  let dead = false;
+
   const resize = () => {
+    if (dead) return;
     applyShellLayout();
     const r = frame.getBoundingClientRect();
     // Skip collapsing resize while backgrounded (0-size frame)
@@ -106,58 +117,45 @@ export async function createPixiApp(): Promise<PixiBundle> {
     host.style.overflow = 'visible';
   };
 
-  const forceRender = () => {
-    try {
-      // Ensure ticker not stuck stopped mid-frame
-      if (!app.ticker.started) app.ticker.start();
-      app.renderer.render(app.stage);
-    } catch (e) {
-      console.warn('[pixi] forceRender failed', e);
-    }
-  };
-
-  /** Full recovery path after background / context restore */
-  const resume = () => {
-    applyShellLayout();
-    resize();
-    forceRender();
-    requestAnimationFrame(() => {
-      applyShellLayout();
-      resize();
-      forceRender();
-    });
-    // iOS often settles viewport a beat later
-    setTimeout(() => {
-      applyShellLayout();
-      resize();
-      forceRender();
-    }, 50);
-    setTimeout(() => {
-      applyShellLayout();
-      resize();
-      forceRender();
-    }, 250);
-  };
-
   resize();
 
   const stopWatch = watchShellLayout(() => {
     resize();
   });
 
-  canvas.addEventListener('webglcontextlost', (e) => {
+  const onLost = (e: Event) => {
+    // Allow browser to restore slot; we still rehydrate fully on resume
     e.preventDefault();
-    console.warn('[pixi] WebGL context lost');
-  });
-  canvas.addEventListener('webglcontextrestored', () => {
-    console.warn('[pixi] WebGL context restored — full resume');
-    resume();
-  });
+    dead = true;
+    console.warn('[pixi] WebGL context lost — expect rehydrate');
+    try {
+      opts.onContextLost?.();
+    } catch {
+      /* ignore */
+    }
+  };
+  canvas.addEventListener('webglcontextlost', onLost);
+  // contextrestored is intentionally NOT a soft-resume path (design 19):
+  // textures and programs are unreliable; GameView rehydrate owns recovery.
 
   const destroy = () => {
+    dead = true;
     stopWatch();
-    app.destroy(true, { children: true });
+    canvas.removeEventListener('webglcontextlost', onLost);
+    try {
+      app.destroy(true, { children: true });
+    } catch (e) {
+      console.warn('[pixi] destroy', e);
+    }
+    // Orphaned canvas if destroy failed
+    if (canvas.parentElement === host) {
+      try {
+        host.removeChild(canvas);
+      } catch {
+        /* ignore */
+      }
+    }
   };
 
-  return { app, world, resize, resume, destroy };
+  return { app, world, resize, destroy };
 }

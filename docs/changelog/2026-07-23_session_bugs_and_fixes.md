@@ -1,18 +1,22 @@
 # 问题与 Bug 整理 · 调整说明（2026-07-23）
 
-**状态：** 已落地（代码 + 参数）  
-**范围：** 抽牌区 UI、层级、洗抽节奏、配对后自动抽、拖动意图/松手判定、拖动 z、谜题区调参  
-**实现钉 / 有效源：**  
-- 手感：`research/handfeel/14` v1.5 · `19` · `20`  
-- 意图：`15`–`20` · `docs/changelog/2026-07-23_drag_intent_drop_decode.md`  
-- 抽叠：`docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md`  
+**更新：** 2026-07-23  
+**状态：** 现行 · 已落地  
+**权威级：** **L3** 会话总表（见 [`DOC_CONVENTIONS`](../DOC_CONVENTIONS.md)）  
+**现行入口：** [`CURRENT.md`](../CURRENT.md) · [`NOTES_PACK.md`](../NOTES_PACK.md)  
+**范围：** 抽叠 UI、层级、洗抽、自动抽、拖意图、z、谜题调参、**后台 rehydrate（B15→D28）**  
+**关联钉 / 设计：**  
+- 手感 L1：`research/handfeel/14` v1.5 · `19` · 源 `20`  
+- 抽叠 L4：`2026-07-23_drawzone_z_autodraw_dim.md`  
+- 意图 L4：`2026-07-23_drag_intent_drop_decode.md`  
+- 生命周期 L2：[`design/19`](../design/19_ios_renderer_lifecycle.md) · L4：`renderer_rehydrate.md`
 
 ---
 
 ## 0. 一句话
 
-本阶段主线是 **抽叠区表现整理**、**动态牌层级**、**拖消「到位却不触发 / 选错」**，以及 **布局默认可调**。  
-规则（isFree / canMatch）未改；动效峰值（skipMeet/exit）大体不重开。
+本阶段主线：**抽叠表现**、**动态层级**、**拖消到位判定**、**布局默认可调**，以及将 **后台空白升格为 D28 生命周期设计**。  
+规则（isFree / canMatch）未改；行为细节以 L0 代码 + L1 钉为准。
 
 ---
 
@@ -34,6 +38,9 @@
 | B12 | 视觉已到 A2 仍弹回 | 无趋势/重叠/画面探针 | 多探针+重叠+方向趋势 | ✅ |
 | B13 | 洗→抽间隔偏长 | recPause 100ms | **50ms** | ✅ |
 | B14 | 谜题区高度要自调 | 写死 GRID_ORIGIN_Y | **trayTuner 谜题顶Y/X** | ✅ |
+| B15 | 切后台再回只见米色底 | WebGL context 失 + soft resume + 旧 canvas 指针 | **升格 D28**：整视图 rehydrate | ✅ 设计 |
+
+> **B15** 不当零散补丁：权威 [`design/19`](../design/19_ios_renderer_lifecycle.md) · 实现 [`renderer_rehydrate`](./2026-07-23_renderer_rehydrate.md)。
 
 ---
 

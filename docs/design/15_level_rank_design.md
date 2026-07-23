@@ -3,7 +3,7 @@
 **状态：** 设计定稿 · Level01 已按此实现  
 **日期：** 2026-07-22  
 **关联：** `02_game_rules` · `04` D10/D19/D20 · `src/data/level01Deal.ts` · `rankDesign.ts`  
-**会话总整理：** `docs/changelog/2026-07-22_level01_session_summary.md`
+**会话总整理：** `docs/changelog/2026-07-22_full_roundup.md`
 
 ---
 
@@ -79,7 +79,7 @@
 | 胜利 | **仅清谜题区**（D10 / D10b）；库/抽出叠不挡胜利 |
 | 平行剥 | **R15 / D19**：同顶 ⇒ 次顶互异 |
 
-**会话总整理：** `docs/changelog/2026-07-22_level01_session_summary.md`
+**会话总整理：** `docs/changelog/2026-07-22_full_roundup.md`
 
 `insightNote` 可含 JSON meta（seed / lockIds / topology）供调试。
 

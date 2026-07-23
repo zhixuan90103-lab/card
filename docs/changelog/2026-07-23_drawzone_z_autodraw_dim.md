@@ -1,6 +1,9 @@
 # Changelog · 抽牌区整理 / 层级 / 自动抽 / 蒙黑（2026-07-23）
 
-**钉文：** `research/handfeel/14_physical_impl_pins.md` **v1.5**  
+**更新：** 2026-07-23  
+**状态：** 现行 · 已实现  
+**权威级：** L4  
+**钉文（L1）：** `research/handfeel/14_physical_impl_pins.md` **v1.5**  
 **代码：** `src/render/cards.ts` · `src/render/phys.ts` · `src/main.ts` · `src/core/state.ts`
 
 ---

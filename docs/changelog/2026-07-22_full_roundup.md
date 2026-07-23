@@ -1,8 +1,11 @@
-# 2026-07-22 · Level01 全日改动总整理（笔记权威）
+# 2026-07-22 · Level01 全日改动总整理
 
-**状态：** 已实现并与代码对齐  
-**读者：** 下次会话 / 交接优先读本文 + `04` 决策表  
-**代码主入口：** `src/data/level01Deal.ts` · `pathLockMetrics.ts` · `src/core/rules.ts` · `state.ts` · `main.ts`
+**更新：** 2026-07-22 · **导航补丁：** 2026-07-23  
+**状态：** 现行 · **规则/发局向** L4 总表（非全项目唯一权威）  
+**权威级：** L4  
+**全局入口：** [`docs/CURRENT.md`](../CURRENT.md) · [`NOTES_PACK`](../NOTES_PACK.md)  
+**读者：** 查 Level01 / D19–D27 发局时读本文 + `design/04`  
+**代码：** `src/data/level01Deal.ts` · `pathLockMetrics.ts` · `src/core/*`
 
 ---
 
@@ -38,7 +41,7 @@
 | 撤销 | 同局回退 |
 | 抽牌 | stock→waste；仅 waste 顶可配 |
 | **点选** | 点两张同点同色 free → 消；不同 → 改选 |
-| **拖放** | 拖 free 到同点同色松手 → 消；否则弹回（见 `drag_match_pile_shadow`） |
+| **拖放** | 拖 free 到同点同色松手 → 消；否则弹回（见 handfeel **19** + `rules.dropMatchTarget`） |
 
 ### 难度两档
 
@@ -157,7 +160,7 @@
 | `2026-07-22_color_match_d22.md` | 红黑配对 |
 | `2026-07-22_path_lock_h1.md` | 钥匙稀缺 H1 |
 | `2026-07-22_full_roundup.md` | **本文总表** |
-| `2026-07-22_drag_match_pile_shadow.md` | 拖拽配对 / 牌背 / 座位常驻影 |
+| （已删）`drag_match_pile_shadow` | 座位影策略以 `session_bugs` / cards 为准 |
 | `2026-07-22_d27_fair_keys.md` | **D27 公平钥匙 + hard 可清** |
 | `2026-07-22_near_miss_p0.md` | **Near-miss P0 发局偏好** |
 | `2026-07-23_ios_roundup.md` | **iOS 真机 / Capacitor 总整理** |

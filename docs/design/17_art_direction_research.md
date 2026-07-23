@@ -1,6 +1,9 @@
 # 17 · 美术方向调研（服务效果图）
 
 **日期：** 2026-07-22  
+**状态：** 归档调研 · 方向**定稿见 `18_art_direction_lock_v20`**  
+**权威级：** L5  
+**注意：** 与 `17_art_ux_research_plan.md` **同号不同文**  
 **用途：** 指导概念图，避免再出「纯扁平/赛博/赌场」偏题稿  
 **样本品类：** Mahjong Solitaire 层叠配对、Senior-friendly tile match、纸牌 puzzle 移动端  
 

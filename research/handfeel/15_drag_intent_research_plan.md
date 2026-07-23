@@ -10,7 +10,7 @@
 - 反查：[`16_drag_intent_gap_audit.md`](./16_drag_intent_gap_audit.md) **v1**  
 - 手感钉：[`14_physical_impl_pins.md`](./14_physical_impl_pins.md) **v1.5**  
 - 抽叠纪要：[`docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md`](../../docs/changelog/2026-07-23_drawzone_z_autodraw_dim.md)  
-- 拖消手感：[`docs/changelog/2026-07-23_drag_handfeel.md`](../../docs/changelog/2026-07-23_drag_handfeel.md)  
+- 拖消手感：[`14_physical_impl_pins.md`](./14_physical_impl_pins.md)
 - 代码：`src/main.ts` · `rules.pickCard` · `PHYS.drag*` · `setMatchHints` · `canMatchCards`  
 
 **NotebookLM：** `poker类手感调优` `b0897377-…`

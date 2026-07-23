@@ -17,7 +17,7 @@
 | 仅竖屏 | ✅ | Info.plist |
 | **仅 iPhone 设备族** | ✅ 本次 | `TARGETED_DEVICE_FAMILY = 1` |
 | 禁止橡皮筋滚动 | ✅ 本次 | `overscroll-behavior` / touch-callout |
-| 后台停 ticker | ✅ 本次 | `visibilitychange` |
+| 后台停 ticker + **回前台 rehydrate** | ✅ D28 | `appLifecycle` + `GameView.rehydrate`（非 soft render） |
 | 出口合规加密声明 | ✅ 本次 | `ITSAppUsesNonExemptEncryption=false` |
 | 调参面板真机隐藏 | ✅ | 已有 |
 | 震动 Haptics | ✅ | 配对/抽牌/点选/胜利 |
@@ -88,7 +88,7 @@ Xcode：
 | 建议 | 现状 / 动作 |
 |------|-------------|
 | 分辨率 cap | `MAX_DPR=3`（15 Pro 正好 3） |
-| 后台暂停 | `visibilitychange` → `ticker.stop` |
+| 后台暂停 | suspend → `ticker.stop`；回前台 → **整视图 rehydrate**（design 19） |
 | 远程调试 | Mac Safari → 开发 → 你的 iPhone → App |
 | 避免超大纹理 | 牌面已 bake；注意整屏截图分辨率 |
 
@@ -122,7 +122,8 @@ Capacitor 官方：iOS **15+**；Xcode **26+**（与当前环境一致）。
 
 1. 启动图按 15 Pro 做一版纯色+ logo  
 2. `@capacitor/status-bar` 统一状态栏样式  
-3. 生命周期：进后台存局 / 回前台 resume（现仅停 ticker）  
+3. 局内存盘（可选）；回前台 **rehydrate 已落地**（D28）  
+
 4. 真机 Instruments 看 Pixi 帧时间  
 5. TestFlight 内测流程  
 
@@ -135,4 +136,5 @@ Capacitor 官方：iOS **15+**；Xcode **26+**（与当前环境一致）。
 - [ ] 消牌飞出不完全被切边  
 - [ ] 震动有反馈  
 - [ ] 调参面板不出现  
-- [ ] 切后台再回，动画不卡死  
+- [ ] 切后台 ≥5s 再回：**牌 + 底栏完整**，可继续点消（D28）  
+

@@ -165,7 +165,7 @@ Pixi：`resolution = dpr`；stage 或根容器 scale 使世界单位 = 设计像
 | 风险 | 动作 |
 |------|------|
 | context lost | `webglcontextlost` preventDefault + `webglcontextrestored` 重建纹理 |
-| 后台回前 | `visibilitychange` 时 resume ticker |
+| 后台回前 | **D28 / design 19**：suspend 停 ticker；resume **整视图 rehydrate**（非仅 resume ticker） |
 | 内存 / 大图 | 牌图集；单纹理边长注意 iOS 上限（常见 4096） |
 | 音频 | 需用户手势解锁（若有 SFX） |
 

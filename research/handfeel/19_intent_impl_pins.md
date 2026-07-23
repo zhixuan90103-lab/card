@@ -1,141 +1,114 @@
-# 操作意图 · 实现钉 v0.1（POC 必遵草案）
+# 操作意图 · 实现钉 v0.2
 
-**日期：** 2026-07-23  
-**状态：** ✅ **P0a/b 已落地代码**（2026-07-23）· 检索轨规格已齐  
-
-**依据：** `15` v0.2 · `16` · `17` · `18` · 源卡 intent_*  
-**代码落点：** `src/main.ts` 为主；可选 `rules.ts` 导出 score 辅助  
+**更新：** 2026-07-23  
+**状态：** 现行 · **L1 已落地**  
+**权威级：** L1（冲突时 **代码** `rules.dropMatchTarget` / `pickCard` / `main.ts` / `phys.ts` 优先）  
+**入口：** [`docs/CURRENT.md`](../../docs/CURRENT.md) · [`docs/NOTES_PACK.md`](../../docs/NOTES_PACK.md)  
+**规范：** [`docs/DOC_CONVENTIONS.md`](../../docs/DOC_CONVENTIONS.md)  
+**有效源：** [`20_intent_effective_sources_list.md`](./20_intent_effective_sources_list.md)  
+**问题总表：** [`session_bugs_and_fixes`](../../docs/changelog/2026-07-23_session_bugs_and_fixes.md) B10–B12  
 
 ---
 
 ## 0. 一句话
 
-> **松手在 free 候选上用「可配优先 + 距离阈值」解码；起拖暂保持 thr，记下 t0。**  
-> 不重开 meet/exit；不改 canMatch 规则；非 free 永不进候选。
+> **拖消松手：可配优先 + 多探针 + 重叠即到位 + 滑动趋势；点选：扩热区 + 最近牌心。**  
+> 不改 canMatch；非 free 不进候选；不做滑词 DP / 全屏磁吸。
 
 ---
 
-## 1. DropDecoder（P0a · 必做）
-
-**替换** `onPointerUp` 中：
+## 1. 点选 / 按下 · `pickCard`
 
 ```text
-target = pickCard(center) ?? pickCard(pointer)
-if target && canMatch → match else snapBack
+free 候选 ∩ 扩 AABB(hitSlop)
+→ 按到牌心距离升序，同距再比 layer/waste
 ```
 
-**为：**
+| 参数 | 默认 | 文件 |
+|------|------|------|
+| `pickHitSlop` | 12 | `phys.ts` |
+
+---
+
+## 2. 松手 · `dropMatchTarget`
+
+### 2.1 探针（多点取最优）
+
+1. 逻辑牌心（手指 − grab + 半牌）  
+2. 手指点  
+3. **画面牌心** `getViewCenter`（消除跟手滞后导致的「看着在 A2 却失败」）
+
+### 2.2 打分
 
 ```text
-function dropDecode(state, dragId, dropCenter, pointer?): CardId | null {
-  const cands = freeCardIds(state).filter(id => id !== dragId)
-  if (cands.length === 0) return null
-
-  const scoreAt = (pt) => {
-    let best: { id, score, dist, match } | null = null
-    for (const id of cands) {
-      const c = state.cards[id]!
-      const cx = c.rect.x + c.rect.w/2, cy = c.rect.y + c.rect.h/2
-      const dist = hypot(pt.x-cx, pt.y-cy)
-      const geom = 1 / (1 + dist / CARD_W)
-      const match = canMatchCards(state.cards[dragId]!, c) ? 1 : 0
-      const tie = /* same order key as pickCard, normalized small */
-      const s = G*geom + M*match + eps*tie
-      if (!best || s > best.score) best = { id, score: s, dist, match }
-    }
-    return best
-  }
-
-  const b1 = scoreAt(dropCenter)
-  const b2 = pointer ? scoreAt(pointer) : null
-  const best = (!b2 || b1.score >= b2.score) ? b1 : b2
-
-  if (best && best.match === 1 && best.dist <= TAU_MATCH) return best.id
-  return null
-}
-
-// up:
-const targetId = dropDecode(...)
-if (targetId && !isFlipping(targetId)) → tryMatchPair ...
-else → snapBack
+score =
+  G * geom(dist/牌宽)
++ M * I[canMatch]
++ T * trend          // 从 origin 朝向目标的 cos+，仅可配
++ 0.35 * I[可配且矩形重叠]
++ ε * layerTie
 ```
 
-**常量初值：** 见 `18`（G=1, M=2.5, τ=0.55×CARD_W）。
+### 2.3 接受条件（满足其一，且 canMatch）
 
-**验收：** 故事 **S1 过**；S2/S3/S7/S8 不回归。
-
----
-
-## 2. 起拖（P0b · 必做最小）
-
-```text
-// 保持
-if (distDesign >= PHYS.dragThreshold) dragging = true
-// 增加
-armedAt = performance.now()  // 写入 DragState，供日志/后续特征
-// sticky 保持 true
-```
-
-**可选 P1a（默认关）：**  
-`dragging ||= distDesign >= s_min && speed >= v0`（参数见 18）。
-
----
-
-## 3. 点抽 / 误抽（P1b · 非阻塞）
-
-- 保持：`pickCard` 先于 `hitStock`。  
-- 可选：waste 座位 hit 矩形外扩 4–8 design px **仅用于**「无 free AABB 时」的二次测试，避免 S6；**不要**把非 free 当 free。
-
----
-
-## 4. 已有能力 · 勿重复造
-
-| 能力 | 处理 |
+| 条件 | 含义 |
 |------|------|
-| setMatchHints | 点选后保留；拖起可 clear（现行） |
-| drag vel → loft | 仅 Match 后 |
-| isBusy / flip / exit | 对齐 14 |
-| skipMeet 拖消 | **不改** |
+| `dist ≤ τ` | τ = `dropMatchTauScale * CARD_W` |
+| **矩形重叠** | 拖牌 AABB 与目标座位相交 |
+| **趋势放宽** | trend≥0.55 且 dist ≤ 1.2τ |
+
+### 2.4 参数（以 phys 为准）
+
+| 参数 | 默认 |
+|------|------|
+| `dropMatchTauScale` | 0.72 |
+| `dropScoreG` | 1 |
+| `dropScoreM` | 2.5 |
+| `dropScoreT` | 0.85 |
+
+### 2.5 接入
+
+`main.ts` pointerup：构造 probes / origin / vel / dragSize → `dropMatchTarget` → 成功则 skipMeet exit，否则 snapBack。  
+目标 `isFlipping` → 当无目标。
+
+---
+
+## 3. 起拖
+
+- 主通道：`Δs ≥ dragThreshold`（8 design px，经 scale 换算）  
+- 记录 `t0`  
+- sticky：过阈不回 tap  
+
+---
+
+## 4. 拖中层级
+
+- `CARD_Z.drag = 9900`  
+- 每帧 `raiseDragCard`（z + addChild + sortChildren）  
+- `sync` 跳过正在拖的牌  
 
 ---
 
 ## 5. 反模式（硬）
 
-见 `15` §7 · `intent_a_ios` §4 · `intent_c` §4。摘要：
-
-- 非 canMatch 不消除  
-- 非 free 不进候选  
+- 非 canMatch 消除  
+- 非 free 进候选  
 - 无跟手强磁吸  
-- 无滑词 DP  
-- 不重开 14 动效参数战  
+- 滑词路径 DP  
+- 用历史改规则  
+- 静默吞松手  
 
 ---
 
-## 6. 文件改动清单（POC）
+## 6. 测试
 
-| 文件 | 改动 |
+`src/core/rules.test.ts`：可配优先、过远 null、重叠、趋势、点选最近中心。
+
+---
+
+## 7. 版本
+
+| 版本 | 说明 |
 |------|------|
-| `main.ts` | `dropDecode`；DragState.t0；up 分支 |
-| `phys.ts` | 可选 `dropMatchTauScale` `dropScoreM` 等 |
-| 单测 | 可选：纯函数 score 表驱动 S1 |
-
----
-
-## 7. 检索关闭声明
-
-| 项 | 状态 |
-|----|------|
-| Round A 薄源卡 | ✅ intent_a_* |
-| Round B 故事 | ✅ intent_b |
-| Round C 薄竞品 | ✅ intent_c |
-| 17/18/19 | ✅ 本页 |
-| 外搜 | **停** |
-| 下一阶段 | 真机手感校准 τ/M；可选 P1 误抽 |
-
----
-
-## 8. 版本
-
-| 版本 | 变更 |
-|------|------|
-| v0.1 | 初钉；P0 可执行 |
+| v0.1 | 初钉 DropDecoder |
+| **v0.2** | 对齐已落地：多探针/重叠/趋势/置顶；规范头 |
