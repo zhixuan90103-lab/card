@@ -42,7 +42,9 @@
 | [research/handfeel/14_physical_impl_pins.md](./research/handfeel/14_physical_impl_pins.md) | **物理实现钉（POC）v1.5** |
 | [research/handfeel/15_drag_intent_research_plan.md](./research/handfeel/15_drag_intent_research_plan.md) | **拖动意图识别检索计划 v0.3（检索关）** |
 | [research/handfeel/16_drag_intent_gap_audit.md](./research/handfeel/16_drag_intent_gap_audit.md) | **意图计划反查补漏 v1** |
-| [research/handfeel/19_intent_impl_pins.md](./research/handfeel/19_intent_impl_pins.md) | **意图实现钉 v0.1（POC）** |
+| [research/handfeel/19_intent_impl_pins.md](./research/handfeel/19_intent_impl_pins.md) | **意图实现钉（已落地）** |
+| [research/handfeel/20_intent_effective_sources_list.md](./research/handfeel/20_intent_effective_sources_list.md) | **意图轨有效源 List v1** |
+| [changelog/2026-07-23_drag_intent_drop_decode.md](./changelog/2026-07-23_drag_intent_drop_decode.md) | 拖消松手解码 / 少选错 |
 | [changelog/2026-07-23_match_exit_feel.md](./changelog/2026-07-23_match_exit_feel.md) | 配对飞出/跨侧 | |
 | [changelog/2026-07-23_drag_handfeel.md](./changelog/2026-07-23_drag_handfeel.md) | 拖拽/牌心 | |
 | [changelog/2026-07-23_tap_meet_select.md](./changelog/2026-07-23_tap_meet_select.md) | 点选飞入/抛角/选中 | |

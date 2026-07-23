@@ -1,4 +1,5 @@
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from '../viewport/design';
+import { getPuzzleLayoutParams } from './puzzleLayoutRuntime';
 
 /**
  * 牌面尺寸 · 2026-07-22 对齐 Poker 资源比例
@@ -8,6 +9,8 @@ import { DESIGN_HEIGHT, DESIGN_WIDTH } from '../viewport/design';
  *
  * 竖向分区（上→下）：
  *   顶栏文案 → 谜题区 → 抽牌区（stock/waste）→ 底栏按钮
+ *
+ * 谜题区原点可运行时调参：`puzzleLayoutRuntime`（trayTuner「谜题区」）。
  */
 export const CARD_W = 56;
 export const CARD_H = 74;
@@ -30,16 +33,33 @@ export const STEP_Y = CARD_H + GRID_GAP_Y;
 const gridContentWidth =
   GRID_COLS * CARD_W + (GRID_COLS - 1) * GRID_GAP_X;
 
-export const GRID_ORIGIN_X = Math.max(
+/** 水平居中基准（不含运行时 originX 偏移） */
+export const GRID_ORIGIN_X_BASE = Math.max(
   GRID_SIDE_MARGIN_MIN,
   (DESIGN_WIDTH - gridContentWidth) / 2,
 );
 
 /**
- * 谜题区顶边（推荐一档 · 对齐参考图节奏）：
- * 顶栏文案下方略留白，牌阵整体偏中，拇指好够。
+ * 谜题区顶边默认（调参定稿 2026-07-23）。
+ * 运行时以 `getGridOriginY()` / trayTuner 为准。
  */
-export const GRID_ORIGIN_Y = 155;
+export const GRID_ORIGIN_Y_DEFAULT = 190;
+
+/** @deprecated 用 getGridOriginY()；保留常量兼容旧 import */
+export const GRID_ORIGIN_Y = GRID_ORIGIN_Y_DEFAULT;
+
+/** @deprecated 用 getGridOriginX() */
+export const GRID_ORIGIN_X = GRID_ORIGIN_X_BASE;
+
+/** 当前谜题网格左上角 X（居中 + 调参偏移） */
+export function getGridOriginX(): number {
+  return GRID_ORIGIN_X_BASE + getPuzzleLayoutParams().originX;
+}
+
+/** 当前谜题网格顶边 Y */
+export function getGridOriginY(): number {
+  return getPuzzleLayoutParams().originY;
+}
 
 /** 同槽上漏边：d = round(CARD_H * ratio)，现行 d=9（已定稿） */
 export const STACK_OFFSET_RATIO = 0.13;
@@ -50,8 +70,8 @@ export function stackOffsetY(): number {
 
 export function cellRect(col: number, row: number) {
   return {
-    x: GRID_ORIGIN_X + col * STEP_X,
-    y: GRID_ORIGIN_Y + row * STEP_Y,
+    x: getGridOriginX() + col * STEP_X,
+    y: getGridOriginY() + row * STEP_Y,
     w: CARD_W,
     h: CARD_H,
   };
@@ -102,8 +122,13 @@ export function stackCardY(baseY: number, depthFromTop: number): number {
 // ---------------------------------------------------------------------------
 
 /** L0 最底一行组顶下边缘（同槽上漏边只向上伸，不越过此线） */
+export function getPuzzleBottomY(): number {
+  return getGridOriginY() + (GRID_ROWS - 1) * STEP_Y + CARD_H;
+}
+
+/** @deprecated 用 getPuzzleBottomY()；发局时快照默认顶 */
 export const PUZZLE_BOTTOM_Y =
-  GRID_ORIGIN_Y + (GRID_ROWS - 1) * STEP_Y + CARD_H;
+  GRID_ORIGIN_Y_DEFAULT + (GRID_ROWS - 1) * STEP_Y + CARD_H;
 
 /**
  * 谜题区与抽牌区之间的「最小」空隙（约一牌高）。
@@ -115,15 +140,17 @@ export const PILE_GAP_FROM_PUZZLE = 72;
 export const HUD_BAR_RESERVE = 92;
 
 const pilePairW = CARD_W * 2 + 16;
-/** 谜题底 + 最小间隔 → 抽牌不得高于此线（y 更小） */
-const pileYMin = PUZZLE_BOTTOM_Y + PILE_GAP_FROM_PUZZLE;
 /** 底栏上方 → 抽牌不得低于此线（y 更大） */
 const pileYMax = DESIGN_HEIGHT - HUD_BAR_RESERVE - CARD_H;
 /**
  * 抽牌区 y：优先贴底栏上方（参考图 E 区偏下），
  * 同时保证与谜题至少 PILE_GAP_FROM_PUZZLE，且不压底栏。
+ * （静态默认；活布局见 pileLayoutRuntime）
  */
-export const PILE_Y = Math.min(Math.max(pileYMin, pileYMax), pileYMax);
+export const PILE_Y = Math.min(
+  Math.max(PUZZLE_BOTTOM_Y + PILE_GAP_FROM_PUZZLE, pileYMax),
+  pileYMax,
+);
 
 /** 抽牌 + 抽出叠水平居中（STOCK_RECT = 组顶/下一张可抽的位置） */
 export const STOCK_RECT = {

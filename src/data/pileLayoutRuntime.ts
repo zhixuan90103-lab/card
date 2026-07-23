@@ -30,15 +30,16 @@ export type DrawZoneParams = {
 };
 
 /**
- * Tuned defaults from panel:
- * x=0 · y=600 · w=335 · h=159 · r=15 · gap=50 · peek=8
+ * Tuned defaults from panel 2026-07-23:
+ * x=0 · y=600 · w=325 · h=150 · r=15 · gap=50 · peek=8
+ * label dx=-53 · dy=12 · font=15
  */
 function computeDefault(): DrawZoneParams {
   return {
     x: 0,
     y: 600,
-    w: 335,
-    h: 159,
+    w: 325,
+    h: 150,
     radius: 15,
     gapStockWaste: 50,
     stockPeek: 8,

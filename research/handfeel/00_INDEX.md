@@ -20,7 +20,9 @@
 | [16_drag_intent_gap_audit.md](./16_drag_intent_gap_audit.md) | **意图计划反查补漏** | ✅ **v1** |
 | [17_intent_event_table.md](./17_intent_event_table.md) | 意图事件表 | ✅ v0.1 |
 | [18_intent_features_params.md](./18_intent_features_params.md) | 意图特征/参数 | ✅ v0.1 假设 |
-| [19_intent_impl_pins.md](./19_intent_impl_pins.md) | **意图实现钉（POC）** | ✅ v0.1 |
+| [19_intent_impl_pins.md](./19_intent_impl_pins.md) | **意图实现钉（已落地）** | ✅ v0.1 |
+| [20_intent_effective_sources_list.md](./20_intent_effective_sources_list.md) | **意图轨有效源 List**（调研+落地） | ✅ **v1** |
+| [../../docs/changelog/2026-07-23_drag_intent_drop_decode.md](../../docs/changelog/2026-07-23_drag_intent_drop_decode.md) | 松手解码/点选最近 实现纪要 | ✅ |
 | [sources/intent_a_softkey_decoder.md](./sources/intent_a_softkey_decoder.md) | 软键盘 decoder | ✅ |
 | [sources/intent_a_ios_behavior.md](./sources/intent_a_ios_behavior.md) | iOS 键盘行为 | ✅ |
 | [sources/intent_b_fail_stories.md](./sources/intent_b_fail_stories.md) | 误触故事 8 | ✅ |

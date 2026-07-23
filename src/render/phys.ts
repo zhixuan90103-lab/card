@@ -145,6 +145,22 @@ export const PHYS = {
   /** Random Z tilt peak during recycle fly (deg); settles 0 at frame */
   recTiltMaxDeg: 14,
   dragThreshold: 8,
+  /**
+   * Tap/down pick: expand free-card AABB by this many design px (fat finger),
+   * then choose **nearest card center** among hits (less wrong-card on mobile).
+   */
+  pickHitSlop: 12,
+  /**
+   * Drag drop: max center distance to accept a match, as × card width.
+   * ~0.72 ≈ "I already put it on A2" on phone; still not full-board magnet.
+   */
+  dropMatchTauScale: 0.72,
+  /** Drop score: geometry weight */
+  dropScoreG: 1,
+  /** Drop score: canMatch weight (must dominate nearer non-match free) */
+  dropScoreM: 2.5,
+  /** Drop score: approach/trend (A1→A2 direction) weight */
+  dropScoreT: 0.85,
   /** drag drop: skip meet if centers closer than this (design px) */
   meetSkipDist: 24,
   /**

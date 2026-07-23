@@ -13,9 +13,17 @@ import {
   setDrawZoneParams,
   type DrawZoneParams,
 } from '../data/pileLayoutRuntime';
+import {
+  getPuzzleLayoutParams,
+  PUZZLE_LAYOUT_LIMITS,
+  resetPuzzleLayoutParams,
+  setPuzzleLayoutParams,
+  type PuzzleLayoutParams,
+} from '../data/puzzleLayoutRuntime';
 
 type ZoneKey = keyof DrawZoneParams;
 type ShadowKey = keyof CardShadowParams;
+type PuzzleKey = keyof PuzzleLayoutParams;
 
 const ZONE_FIELDS: { key: ZoneKey; label: string }[] = [
   { key: 'x', label: 'X偏移(0居中)' },
@@ -28,6 +36,11 @@ const ZONE_FIELDS: { key: ZoneKey; label: string }[] = [
   { key: 'stockLabelDx', label: '剩余数X' },
   { key: 'stockLabelDy', label: '剩余数Y' },
   { key: 'stockLabelFontSize', label: '剩余数字号' },
+];
+
+const PUZZLE_FIELDS: { key: PuzzleKey; label: string }[] = [
+  { key: 'originY', label: '谜题顶Y' },
+  { key: 'originX', label: '谜题X偏移' },
 ];
 
 const SHADOW_FIELDS: { key: ShadowKey; label: string }[] = [
@@ -75,10 +88,11 @@ function addNumberRow(
 }
 
 /**
- * Floating panel: draw-zone layout + card shadow.
+ * Floating panel: puzzle + draw-zone layout + card shadow.
  */
 export function mountTrayTuner(opts?: {
   onShadowChange?: () => void;
+  onPuzzleChange?: () => void;
 }): { destroy: () => void } {
   const host = document.createElement('div');
   host.id = 'tray-tuner';
@@ -89,6 +103,9 @@ export function mountTrayTuner(opts?: {
       <button type="button" class="tray-tuner__toggle" title="折叠">−</button>
     </div>
     <div class="tray-tuner__scroll">
+      <p class="tray-tuner__section">谜题区</p>
+      <p class="tray-tuner__hint">顶Y=牌阵最上沿 · X偏移=相对居中 · 默认Y=190</p>
+      <div class="tray-tuner__body" data-puzzle></div>
       <p class="tray-tuner__section">抽牌区</p>
       <p class="tray-tuner__hint">X=0 居中 · Y 托盘+牌一起动</p>
       <div class="tray-tuner__body" data-zone></div>
@@ -104,6 +121,7 @@ export function mountTrayTuner(opts?: {
   `;
   document.body.appendChild(host);
 
+  const puzzleBody = host.querySelector('[data-puzzle]') as HTMLElement;
   const zoneBody = host.querySelector('[data-zone]') as HTMLElement;
   const shadowBody = host.querySelector('[data-shadow]') as HTMLElement;
   const out = host.querySelector('.tray-tuner__out') as HTMLElement;
@@ -112,6 +130,23 @@ export function mountTrayTuner(opts?: {
   ) as HTMLButtonElement;
 
   const syncers: Array<{ sync: () => void }> = [];
+
+  for (const f of PUZZLE_FIELDS) {
+    const lim = PUZZLE_LAYOUT_LIMITS[f.key];
+    syncers.push(
+      addNumberRow(
+        puzzleBody,
+        f.label,
+        lim,
+        () => getPuzzleLayoutParams()[f.key],
+        (v) => {
+          setPuzzleLayoutParams({ [f.key]: v });
+          opts?.onPuzzleChange?.();
+          dump();
+        },
+      ),
+    );
+  }
 
   for (const f of ZONE_FIELDS) {
     const lim = DRAW_ZONE_LIMITS[f.key];
@@ -150,9 +185,10 @@ export function mountTrayTuner(opts?: {
     for (const s of syncers) s.sync();
     const zone = getDrawZoneParams();
     const shadow = getCardShadowParams();
+    const puzzle = getPuzzleLayoutParams();
     const abs = getTrayRect();
     out.textContent = JSON.stringify(
-      { drawZone: zone, trayAbs: abs, cardShadow: shadow },
+      { puzzle, drawZone: zone, trayAbs: abs, cardShadow: shadow },
       null,
       2,
     );
@@ -161,8 +197,10 @@ export function mountTrayTuner(opts?: {
   dump();
 
   host.querySelector('[data-act="reset"]')!.addEventListener('click', () => {
+    resetPuzzleLayoutParams();
     resetDrawZoneParams();
     resetCardShadowParams();
+    opts?.onPuzzleChange?.();
     opts?.onShadowChange?.();
     dump();
   });
@@ -170,6 +208,7 @@ export function mountTrayTuner(opts?: {
   host.querySelector('[data-act="copy"]')!.addEventListener('click', async () => {
     const text = JSON.stringify(
       {
+        puzzle: getPuzzleLayoutParams(),
         drawZone: getDrawZoneParams(),
         trayAbs: getTrayRect(),
         cardShadow: getCardShadowParams(),

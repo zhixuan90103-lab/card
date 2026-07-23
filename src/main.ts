@@ -1,5 +1,5 @@
 import { GameSession, pickCard } from './core';
-import { freeCardIds } from './core/rules';
+import { dropMatchTarget, freeCardIds } from './core/rules';
 import { isHardDead, isSoftStuck } from './core/stuck';
 import type { CardId, GameState, Level } from './core/types';
 import { canMatchCards } from './core/types';
@@ -10,6 +10,10 @@ import {
   getWasteRect,
   onDrawZoneChange,
 } from './data/pileLayoutRuntime';
+import {
+  getPuzzleLayoutParams,
+  onPuzzleLayoutChange,
+} from './data/puzzleLayoutRuntime';
 import {
   CONTENT_MODE,
   difficultyForRun,
@@ -336,11 +340,30 @@ async function main(): Promise<void> {
         (window.matchMedia('(pointer: coarse)').matches &&
           window.innerWidth < 900))
     );
+  // Live shift of puzzle card rects when tuner changes origin
+  let puzzleLayoutSnap = getPuzzleLayoutParams();
+  const applyPuzzleLayoutDelta = () => {
+    const next = getPuzzleLayoutParams();
+    const dx = next.originX - puzzleLayoutSnap.originX;
+    const dy = next.originY - puzzleLayoutSnap.originY;
+    puzzleLayoutSnap = { ...next };
+    if (dx === 0 && dy === 0) return;
+    const st = session.getState();
+    for (const c of Object.values(st.cards)) {
+      if (c.zone !== 'puzzle') continue;
+      c.rect.x += dx;
+      c.rect.y += dy;
+    }
+    cards.sync(st);
+  };
+
   if (showDevTuner) {
     mountTrayTuner({
       onShadowChange: () => cards.sync(session.getState()),
     });
   }
+  // Tuner set/reset emits here → shift live puzzle rects + resync
+  onPuzzleLayoutChange(() => applyPuzzleLayoutDelta());
   onDrawZoneChange(() => {
     syncPileRects(session);
     cards.sync(session.getState());
@@ -363,6 +386,8 @@ async function main(): Promise<void> {
     grabDy: number;
     home: { x: number; y: number; w: number; h: number };
     dragging: boolean;
+    /** pointerdown time (ms) — intent features / future thr */
+    t0: number;
     /** last card top-left in design space (for velocity) */
     lastX: number;
     lastY: number;
@@ -517,13 +542,17 @@ async function main(): Promise<void> {
     const p = screenToDesign(e.clientX, e.clientY, rect);
 
     // Prefer free cards (including waste top). Stock backs are not free → fall through to draw.
+    // pickCard: fat-finger slop + nearest center (fewer wrong taps on mobile).
     syncPileRects(session);
-    const id = pickCard(session.getState(), p);
+    const id = pickCard(session.getState(), p, {
+      hitSlop: PHYS.pickHitSlop,
+    });
     if (id) {
       // Flipping cards must not be dragged; exiting matched pair not pickable
       if (cards.isFlipping(id) || cards.isExiting(id)) return;
       const home = cards.getHomePosition(session.getState(), id);
       if (!home) return;
+      const now0 = performance.now();
       activeDrag = {
         id,
         pointerId: e.pointerId,
@@ -533,9 +562,10 @@ async function main(): Promise<void> {
         grabDy: p.y - home.y,
         home,
         dragging: false,
+        t0: now0,
         lastX: home.x,
         lastY: home.y,
-        lastT: performance.now(),
+        lastT: now0,
         velX: 0,
         velY: 0,
       };
@@ -615,15 +645,34 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Drop: use dragged card center for hit (more reliable than finger tip alone)
+    // Drop: multi-probe + canMatch + approach trend + overlap
+    // (visual lag can put the card on A2 while finger math alone misses)
     syncPileRects(session);
     const st = session.getState();
     const dropX = p.x - drag.grabDx + drag.home.w / 2;
     const dropY = p.y - drag.grabDy + drag.home.h / 2;
-    // Prefer center; fall back to pointer if center misses (edge of board)
-    let targetId =
-      pickCard(st, { x: dropX, y: dropY }, { excludeId: drag.id }) ??
-      pickCard(st, p, { excludeId: drag.id });
+    const visual = cards.getViewCenter(drag.id);
+    const origin = {
+      x: drag.home.x + drag.home.w / 2,
+      y: drag.home.y + drag.home.h / 2,
+    };
+    const probes: { x: number; y: number }[] = [{ x: dropX, y: dropY }, p];
+    if (visual) probes.push(visual);
+    let targetId = dropMatchTarget(
+      st,
+      drag.id,
+      { x: dropX, y: dropY },
+      {
+        probes,
+        origin,
+        vel: { x: drag.velX, y: drag.velY },
+        dragSize: { w: drag.home.w, h: drag.home.h },
+        tauScale: PHYS.dropMatchTauScale,
+        scoreG: PHYS.dropScoreG,
+        scoreM: PHYS.dropScoreM,
+        scoreT: PHYS.dropScoreT,
+      },
+    );
     // Cannot drop-match onto a card that is flipping
     if (targetId && cards.isFlipping(targetId)) targetId = null;
     const a = st.cards[drag.id];

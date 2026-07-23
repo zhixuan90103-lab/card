@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isFree, pickCard, isWon, hasImmediatePair } from './rules';
+import {
+  isFree,
+  pickCard,
+  dropMatchTarget,
+  isWon,
+  hasImmediatePair,
+} from './rules';
 import { createStateFromLevel, GameSession } from './state';
 import type { Level } from './types';
 
@@ -95,6 +101,257 @@ describe('isFree / pickCard', () => {
     expect(pickCard(state, { x: 50, y: 50 }, { excludeId: 't1' })).toBeNull();
     // b2 alone free
     expect(pickCard(state, { x: 170, y: 50 }, { excludeId: 'b2' })).toBeNull();
+  });
+
+  it('pickCard prefers nearer center when two free overlap touch', () => {
+    // Same layer so neither covers the other (higher layer would lock lower free).
+    const level: Level = {
+      id: 'near',
+      coverThreshold: 0.15,
+      cards: [
+        {
+          id: 'a0_0',
+          rank: '3',
+          suit: 'S',
+          layer: 0,
+          x: 0,
+          y: 0,
+          w: 100,
+          h: 100,
+        },
+        {
+          id: 'b0_0',
+          rank: '4',
+          suit: 'S',
+          layer: 0,
+          x: 60,
+          y: 0,
+          w: 100,
+          h: 100,
+        },
+      ],
+      stock: [],
+    };
+    const state = createStateFromLevel(level);
+    expect(isFree(state, 'a0_0')).toBe(true);
+    expect(isFree(state, 'b0_0')).toBe(true);
+    // both free; point nearer left center
+    expect(pickCard(state, { x: 40, y: 50 }, { hitSlop: 0 })).toBe('a0_0');
+    // point nearer right center
+    expect(pickCard(state, { x: 120, y: 50 }, { hitSlop: 0 })).toBe('b0_0');
+  });
+});
+
+describe('dropMatchTarget', () => {
+  it('prefers match partner over nearer non-match free', () => {
+    // blocker & partner must both be free (no center-in-footprint lock)
+    const level: Level = {
+      id: 'drop',
+      coverThreshold: 0.15,
+      cards: [
+        {
+          id: 'drag',
+          rank: '5',
+          suit: 'H',
+          layer: 0,
+          x: 0,
+          y: 200,
+          w: 52,
+          h: 72,
+        },
+        {
+          id: 'blocker',
+          rank: '9',
+          suit: 'S',
+          layer: 0,
+          x: 80,
+          y: 0,
+          w: 52,
+          h: 72,
+        },
+        {
+          id: 'partner',
+          rank: '5',
+          suit: 'H',
+          layer: 0,
+          // centers ~27px apart so neither free-locks the other
+          x: 107,
+          y: 0,
+          w: 52,
+          h: 72,
+        },
+      ],
+      stock: [],
+    };
+    const state = createStateFromLevel(level);
+    expect(isFree(state, 'blocker')).toBe(true);
+    expect(isFree(state, 'partner')).toBe(true);
+    // drop closer to blocker (106,36) than partner (133,36), within τ of partner
+    const drop = { x: 115, y: 36 };
+    const dBlock = Math.hypot(115 - 106, 0);
+    const dPart = Math.hypot(115 - 133, 0);
+    expect(dBlock).toBeLessThan(dPart);
+    expect(dPart).toBeLessThanOrEqual(0.72 * 52 + 1e-6);
+    // old pick (nearest free center) would be blocker; decoder must return partner
+    expect(
+      dropMatchTarget(state, 'drag', drop, {
+        tauScale: 0.72,
+        scoreG: 1,
+        scoreM: 2.5,
+      }),
+    ).toBe('partner');
+  });
+
+  it('accepts match when drag rect overlaps partner even if center a bit off', () => {
+    const level: Level = {
+      id: 'overlap',
+      coverThreshold: 0.15,
+      cards: [
+        {
+          id: 'drag',
+          rank: '5',
+          suit: 'H',
+          layer: 0,
+          x: 0,
+          y: 200,
+          w: 52,
+          h: 72,
+        },
+        {
+          id: 'partner',
+          rank: '5',
+          suit: 'H',
+          layer: 0,
+          x: 100,
+          y: 0,
+          w: 52,
+          h: 72,
+        },
+      ],
+      stock: [],
+    };
+    const state = createStateFromLevel(level);
+    // centers ~50px apart (over old tight tau) but cards overlap when drag center near partner
+    const drop = { x: 90, y: 36 };
+    expect(
+      dropMatchTarget(state, 'drag', drop, {
+        tauScale: 0.55,
+        dragSize: { w: 52, h: 72 },
+      }),
+    ).toBe('partner');
+  });
+
+  it('rewards approach trend toward partner', () => {
+    const level: Level = {
+      id: 'trend',
+      coverThreshold: 0.15,
+      cards: [
+        {
+          id: 'drag',
+          rank: '5',
+          suit: 'H',
+          layer: 0,
+          x: 0,
+          y: 0,
+          w: 52,
+          h: 72,
+        },
+        {
+          id: 'partner',
+          rank: '5',
+          suit: 'H',
+          layer: 0,
+          x: 80,
+          y: 0,
+          w: 52,
+          h: 72,
+        },
+      ],
+      stock: [],
+    };
+    const state = createStateFromLevel(level);
+    // approach toward partner; dist slightly over base τ but under trend τ
+    const origin = { x: 26, y: 36 };
+    const drop = { x: 74, y: 36 };
+    const dist = Math.hypot(74 - 106, 0);
+    expect(dist).toBeGreaterThan(0.55 * 52);
+    expect(dist).toBeLessThanOrEqual(0.55 * 52 * 1.2);
+    expect(
+      dropMatchTarget(state, 'drag', drop, {
+        origin,
+        tauScale: 0.55,
+        scoreT: 0.85,
+      }),
+    ).toBe('partner');
+  });
+
+  it('returns null when only non-match free is near', () => {
+    const level: Level = {
+      id: 'nomatch',
+      coverThreshold: 0.15,
+      cards: [
+        {
+          id: 'drag',
+          rank: '5',
+          suit: 'H',
+          layer: 0,
+          x: 0,
+          y: 0,
+          w: 52,
+          h: 72,
+        },
+        {
+          id: 'other',
+          rank: '9',
+          suit: 'S',
+          layer: 0,
+          x: 20,
+          y: 0,
+          w: 52,
+          h: 72,
+        },
+      ],
+      stock: [],
+    };
+    const state = createStateFromLevel(level);
+    expect(
+      dropMatchTarget(state, 'drag', { x: 46, y: 36 }, { tauScale: 0.55 }),
+    ).toBeNull();
+  });
+
+  it('returns null when match partner is too far', () => {
+    const level: Level = {
+      id: 'far',
+      coverThreshold: 0.15,
+      cards: [
+        {
+          id: 'drag',
+          rank: '5',
+          suit: 'H',
+          layer: 0,
+          x: 0,
+          y: 0,
+          w: 52,
+          h: 72,
+        },
+        {
+          id: 'partner',
+          rank: '5',
+          suit: 'H',
+          layer: 0,
+          x: 200,
+          y: 0,
+          w: 52,
+          h: 72,
+        },
+      ],
+      stock: [],
+    };
+    const state = createStateFromLevel(level);
+    // drop at drag seat — partner ~200px away >> 0.55*52
+    expect(
+      dropMatchTarget(state, 'drag', { x: 26, y: 36 }, { tauScale: 0.55 }),
+    ).toBeNull();
   });
 });
 

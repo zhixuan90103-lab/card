@@ -61,7 +61,8 @@ POC 第一手：L-PF-14（14_physical_impl_pins）
 | **L-HF-11** | `research/handfeel/11_physical_anim_params.md` | 物理参数 v0.2（120+260=380） |
 | **L-HF-09** | `research/handfeel/09_physical_feel_research_plan.md` | 检索计划 v1.2（检索关） |
 | **L-HF-13** | `research/handfeel/13_physical_gap_audit.md` | 物理轨反查 |
-| **L-HF-12** | `research/handfeel/12_effective_sources_list.md` | **本表** |
+| **L-HF-12** | `research/handfeel/12_effective_sources_list.md` | **本表**（物理/旧轨） |
+| **L-IT-20** | `research/handfeel/20_intent_effective_sources_list.md` | **拖动意图轨有效源**（iOS 映射 + DropDecoder 落地） |
 
 ### 旧轨 / 线上对照（未升格前仍有效）
 

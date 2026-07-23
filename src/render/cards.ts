@@ -39,7 +39,11 @@ export const CARD_Z = {
   selectSeat: 2000,
   /** selected puzzle: selectPuzzle + layer * 10 */
   selectPuzzle: 1000,
-  drag: 8000,
+  /**
+   * Dragged card — must stay above all static + most FX.
+   * (Fast swipe was slipping under puzzle when sort didn't re-run.)
+   */
+  drag: 9900,
   /** remaining stock compact while another card draws */
   stockCompact: 8400,
   draw: 8500,
@@ -152,6 +156,21 @@ export class CardRenderer {
 
   private readonly cardHx = CARD_W / 2;
   private readonly cardHy = CARD_H / 2;
+
+  /**
+   * Keep dragged card above every static seat (and re-sort children).
+   * Call every drag frame — zIndex alone can lag if sortDirty never re-fires.
+   */
+  private raiseDragCard(view: CardView): void {
+    view.root.visible = true;
+    view.root.zIndex = CARD_Z.drag;
+    view.root.alpha = 1;
+    if (view.root.parent === this.root) {
+      // Child-order tiebreak + mark dirty for sortableChildren
+      this.root.addChild(view.root);
+    }
+    this.root.sortChildren();
+  }
 
   /** Place card with center pivot from layout top-left + rotation. */
   private placeFromTopLeft(
@@ -604,6 +623,7 @@ export class CardRenderer {
         scale: scaleFrom,
         zIndex: CARD_Z.drag,
       });
+      this.raiseDragCard(view);
       this.paintShadow(view.shadow, CARD_W, CARD_H);
       // Logical pos = finger (sync/hit paths that read dragPos stay operational)
       this.dragPos.set(id, { x, y });
@@ -620,6 +640,8 @@ export class CardRenderer {
     st.tx = x;
     st.ty = y;
     this.dragPos.set(id, { x, y });
+    // Pointer moves can outrun ticker for a frame — keep z on top immediately
+    this.raiseDragCard(view);
     if (ticker) this.ensureDragFollowTick(ticker);
   }
 
@@ -691,6 +713,7 @@ export class CardRenderer {
           scale: this.dragScaleAt(st),
           zIndex: CARD_Z.drag,
         });
+        this.raiseDragCard(view);
         // Keep dragPos on finger so any reader of dragPos stays operational
         this.dragPos.set(id, { x: st.tx, y: st.ty });
       }
@@ -899,7 +922,7 @@ export class CardRenderer {
     view.root.pivot.set(hx, hy);
     view.root.x = c0.x;
     view.root.y = c0.y;
-    view.root.zIndex = CARD_Z.drag;
+    this.raiseDragCard(view);
     const startX = c0.x;
     const startY = c0.y;
     const endX = home.x + hx;
@@ -915,7 +938,7 @@ export class CardRenderer {
       view.root.x = startX + (endX - startX) * ease;
       view.root.y = startY + (endY - startY) * ease;
       view.root.scale.set(startS + (1 - startS) * ease);
-      view.root.zIndex = CARD_Z.drag;
+      this.raiseDragCard(view);
       // 回正带轻微晃动：衰减 × 余弦过冲
       const decay = Math.exp(-3.4 * u);
       const wobble = Math.cos(u * Math.PI * PHYS.snapRotWobble);
@@ -2013,6 +2036,11 @@ export class CardRenderer {
         this.flipping.has(id)
       )
         continue;
+      // Drag visual is owned by dragFollow tick — never demote z / snap seat mid-swipe
+      if (this.dragPos.has(id) || this.dragFollow.has(id)) {
+        this.raiseDragCard(view);
+        continue;
+      }
       const card = state.cards[id];
       if (!card) {
         view.root.visible = false;

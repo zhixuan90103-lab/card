@@ -150,34 +150,180 @@ export function freeCardIds(state: GameState): CardId[] {
   return ids;
 }
 
+/**
+ * Pick a free card under a touch (tap / pointerdown).
+ * - Expand AABB by `hitSlop` (fat finger).
+ * - Among hits, choose **nearest card center** (mobile wrong-card fix).
+ * - Layer/waste only breaks distance ties.
+ */
 export function pickCard(
   state: GameState,
   p: { x: number; y: number },
-  opts?: { excludeId?: CardId },
+  opts?: { excludeId?: CardId; hitSlop?: number },
 ): CardId | null {
-  const candidates: Card[] = [];
+  const slop = opts?.hitSlop ?? 12;
+  type Cand = { id: CardId; dist: number; z: number };
+  const candidates: Cand[] = [];
   for (const id of freeCardIds(state)) {
     if (opts?.excludeId && id === opts.excludeId) continue;
     const c = state.cards[id];
     if (!c) continue;
     const { rect } = c;
     if (
-      p.x >= rect.x &&
-      p.x <= rect.x + rect.w &&
-      p.y >= rect.y &&
-      p.y <= rect.y + rect.h
+      p.x < rect.x - slop ||
+      p.x > rect.x + rect.w + slop ||
+      p.y < rect.y - slop ||
+      p.y > rect.y + rect.h + slop
     ) {
-      candidates.push(c);
+      continue;
     }
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+    const dist = Math.hypot(p.x - cx, p.y - cy);
+    const z = c.zone === 'waste' ? 1000 + c.layer : c.layer;
+    candidates.push({ id, dist, z });
   }
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => {
-    const za = a.zone === 'waste' ? 1000 + a.layer : a.layer;
-    const zb = b.zone === 'waste' ? 1000 + b.layer : b.layer;
-    if (zb !== za) return zb - za;
+    if (a.dist !== b.dist) return a.dist - b.dist;
+    if (b.z !== a.z) return b.z - a.z;
     return a.id < b.id ? 1 : -1;
   });
-  return candidates[0].id;
+  return candidates[0]!.id;
+}
+
+export type DropMatchOpts = {
+  /** Extra probes (finger, visual center, …); best score across probes */
+  probes?: { x: number; y: number }[];
+  /** Drag start center — for approach/trend bias A1→A2 */
+  origin?: { x: number; y: number };
+  /** Release velocity (design px/s) — trend when still moving */
+  vel?: { x: number; y: number };
+  /** Dragged card size for overlap test (default drag.rect) */
+  dragSize?: { w: number; h: number };
+  /** Max match distance as × card width (default 0.72) */
+  tauScale?: number;
+  scoreG?: number;
+  scoreM?: number;
+  /** Approach/trend weight (default 0.85) */
+  scoreT?: number;
+};
+
+/**
+ * Drag-release target: canMatch-heavy score + multi-probe + optional
+ * approach trend + card-overlap forgiveness.
+ * Returns null → snapBack.
+ */
+export function dropMatchTarget(
+  state: GameState,
+  dragId: CardId,
+  dropCenter: { x: number; y: number },
+  opts?: DropMatchOpts,
+): CardId | null {
+  const drag = state.cards[dragId];
+  if (!drag?.alive) return null;
+
+  const G = opts?.scoreG ?? 1;
+  const M = opts?.scoreM ?? 2.5;
+  const T = opts?.scoreT ?? 0.85;
+  const eps = 0.01;
+  const cardW = Math.max(1, drag.rect.w);
+  const cardH = Math.max(1, drag.rect.h);
+  const dw = opts?.dragSize?.w ?? cardW;
+  const dh = opts?.dragSize?.h ?? cardH;
+  const tau = (opts?.tauScale ?? 0.72) * cardW;
+  // If user dragged toward a partner, allow slightly looser center distance
+  const tauTrend = tau * 1.2;
+
+  const probes: { x: number; y: number }[] = [dropCenter];
+  if (opts?.probes) {
+    for (const q of opts.probes) probes.push(q);
+  }
+
+  // Unit approach: prefer release displacement from origin; else velocity
+  let apx = 0;
+  let apy = 0;
+  if (opts?.origin) {
+    const dx = dropCenter.x - opts.origin.x;
+    const dy = dropCenter.y - opts.origin.y;
+    const len = Math.hypot(dx, dy);
+    if (len > 8) {
+      apx = dx / len;
+      apy = dy / len;
+    }
+  }
+  if (apx === 0 && apy === 0 && opts?.vel) {
+    const len = Math.hypot(opts.vel.x, opts.vel.y);
+    if (len > 40) {
+      apx = opts.vel.x / len;
+      apy = opts.vel.y / len;
+    }
+  }
+
+  type Best = {
+    id: CardId;
+    score: number;
+    dist: number;
+    match: boolean;
+    overlap: boolean;
+    trend: number;
+  };
+
+  let best: Best | null = null;
+
+  for (const pt of probes) {
+    for (const id of freeCardIds(state)) {
+      if (id === dragId) continue;
+      const c = state.cards[id];
+      if (!c?.alive) continue;
+      const cx = c.rect.x + c.rect.w / 2;
+      const cy = c.rect.y + c.rect.h / 2;
+      const dist = Math.hypot(pt.x - cx, pt.y - cy);
+      const geom = 1 / (1 + dist / cardW);
+      const match = canMatchCards(drag, c);
+      const z = c.zone === 'waste' ? 1000 + c.layer : c.layer;
+
+      // Dragged card AABB at this probe center overlaps target seat?
+      const dragRect = {
+        x: pt.x - dw / 2,
+        y: pt.y - dh / 2,
+        w: dw,
+        h: dh,
+      };
+      const overlap = rectsOverlap(dragRect, c.rect);
+
+      // Trend: moving from origin toward this card (0..1)
+      let trend = 0;
+      if (match && (apx !== 0 || apy !== 0)) {
+        const tx = cx - (opts?.origin?.x ?? pt.x);
+        const ty = cy - (opts?.origin?.y ?? pt.y);
+        const tlen = Math.hypot(tx, ty);
+        if (tlen > 1) {
+          const cos = (apx * tx + apy * ty) / tlen;
+          trend = Math.max(0, cos); // only reward same hemisphere
+        }
+      }
+
+      const score =
+        G * geom +
+        M * (match ? 1 : 0) +
+        T * trend * (match ? 1 : 0) +
+        (overlap && match ? 0.35 : 0) +
+        eps * (z / 1e4);
+
+      if (!best || score > best.score) {
+        best = { id, score, dist, match, overlap, trend };
+      }
+    }
+  }
+
+  if (!best || !best.match) return null;
+
+  // Accept if close enough, or overlapping seats, or clear approach + slightly further
+  const inTau = best.dist <= tau;
+  const inTrendTau = best.trend >= 0.55 && best.dist <= tauTrend;
+  if (inTau || best.overlap || inTrendTau) return best.id;
+  return null;
 }
 
 /**

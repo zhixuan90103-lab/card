@@ -1,5 +1,11 @@
 import type { Level, LevelCardDef, Rank } from '../core/types';
-import { CARD_H, CARD_W, GRID_ORIGIN_Y, STEP_X, STEP_Y } from './layout';
+import {
+  CARD_H,
+  CARD_W,
+  getGridOriginY,
+  STEP_X,
+  STEP_Y,
+} from './layout';
 import { DESIGN_WIDTH } from '../viewport/design';
 
 const DEFAULT_COVER = 0.12;
@@ -170,7 +176,7 @@ function buildPillow(
   const ranks = opts.freeRanks.slice(0, 4);
   const n = Math.min(4, Math.max(2, ranks.length));
   const depth = opts.stackDepth ?? (thick ? 3 : 2);
-  const freeY = GRID_ORIGIN_Y + STEP_Y * 1.55;
+  const freeY = getGridOriginY() + STEP_Y * 1.55;
   const xs = freeXs(n, thick ? STEP_X * 0.86 : STEP_X * 0.95);
 
   for (let i = 0; i < n; i++) {
@@ -207,7 +213,7 @@ function buildTripeaks(
   const cards: LevelCardDef[] = [];
   const ranks = [...opts.freeRanks];
   while (ranks.length < 3) ranks.push(ranks[0] ?? 'A');
-  const freeY = GRID_ORIGIN_Y + STEP_Y * 1.2;
+  const freeY = getGridOriginY() + STEP_Y * 1.2;
   const peakXs = freeXs(3, STEP_X * 1.1);
   const depth = opts.stackDepth ?? 3;
 
@@ -235,7 +241,7 @@ function buildIsland(
   const cards: LevelCardDef[] = [];
   const ranks = opts.freeRanks;
   const n = Math.min(4, Math.max(2, ranks.length));
-  const freeY = GRID_ORIGIN_Y + STEP_Y * 1.35;
+  const freeY = getGridOriginY() + STEP_Y * 1.35;
   const depth = opts.stackDepth ?? 2;
   const xs = freeXs(n);
 
