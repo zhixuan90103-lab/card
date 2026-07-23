@@ -25,12 +25,14 @@
 | **D27 / D27b** | **公平钥匙** + **Near-miss 发局偏好**（稀缺优先 3～4、前半进度） | `d27_fair_keys` · `near_miss_p0` |
 | **D15** | 主渲染 **PixiJS 8.19.x** 单引擎；HUD 用 **DOM** |
 
+| **D16** | 设计分辨率 **393×852**；PC **phone-frame letterbox**；真机 iPhone 壳见 iOS 总整理 |
+| **D17** | 可点集 = **逻辑 isFree + AABB**（引擎不单独决定合法性） |
+
 **Level01 总整理：** `docs/changelog/2026-07-22_full_roundup.md`  
 **操作/表现：** `docs/changelog/2026-07-22_drag_match_pile_shadow.md`  
 **钥匙/可解：** `docs/changelog/2026-07-22_d27_fair_keys.md`  
-**差一点体感：** `docs/changelog/2026-07-22_near_miss_p0.md`
-| **D16** | 设计分辨率 **393×852**；PC **phone-frame letterbox** |
-| **D17** | 可点集 = **逻辑 isFree + AABB**（引擎不单独决定合法性） |
+**差一点体感：** `docs/changelog/2026-07-22_near_miss_p0.md`  
+**iOS 真机：** `docs/changelog/2026-07-23_ios_roundup.md`
 
 **否决：** Three 作主渲染、双引擎、仅靠 Chrome Device Mode 当验收、默认 timer、接龙核心。
 

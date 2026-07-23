@@ -2,6 +2,7 @@
 
 **范围：** 只做 iPhone（锚点 **iPhone 15 / 15 Pro · 393×852**），不用 Android 做验收。  
 **栈：** Vite + Pixi8 WebGL + Capacitor 8 + Xcode 26  
+**总整理：** [`2026-07-23_ios_roundup.md`](./2026-07-23_ios_roundup.md)
 
 ---
 

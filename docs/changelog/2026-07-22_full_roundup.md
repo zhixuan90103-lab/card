@@ -160,6 +160,7 @@
 | `2026-07-22_drag_match_pile_shadow.md` | 拖拽配对 / 牌背 / 座位常驻影 |
 | `2026-07-22_d27_fair_keys.md` | **D27 公平钥匙 + hard 可清** |
 | `2026-07-22_near_miss_p0.md` | **Near-miss P0 发局偏好** |
+| `2026-07-23_ios_roundup.md` | **iOS 真机 / Capacitor 总整理** |
 | `2026-07-22_poker_assets.md` | Poker 资源 |
 | `research/path-lock/00_INDEX.md` | 路径锁检索全套 |
 

@@ -12,9 +12,11 @@
 
 1. **`contentInset: 'never'`** — WebView 全铺；安全区只在内容层处理  
 2. **`shellLayout.ts`** — 用 `visualViewport` 量宽高，**JS 等比 contain** 设 frame 的 px  
-3. **Pixi `frameResolution` 用 `Math.min`**（contain），与 frame 一致  
-4. **窗口 / Launch 背景 `#efe5d9`** — 杜绝系统黑条  
-5. **仅竖屏** — 避免横屏破坏 shell  
+3. **游戏框对整屏 contain**（不先扣 safe-area）；**HUD 才用 safe-area**（放大画面）  
+4. **Pixi `frameResolution` 用 `Math.min`**（contain），与 frame 一致  
+5. **窗口 / Launch 背景 `#efe5d9`** — 杜绝系统黑条  
+6. **仅竖屏 · 仅 iPhone 设备族**  
+7. **总整理：** `2026-07-23_ios_roundup.md`
 
 ## 文件
 

@@ -61,7 +61,8 @@
 | [changelog/2026-07-22_full_roundup.md](./changelog/2026-07-22_full_roundup.md) | **全日权威总表（优先读）** |
 | [changelog/2026-07-22_d27_fair_keys.md](./changelog/2026-07-22_d27_fair_keys.md) | **D27 公平钥匙几何 + hard 可清** |
 | [changelog/2026-07-22_near_miss_p0.md](./changelog/2026-07-22_near_miss_p0.md) | **Near-miss P0（差一点体感·发局）** |
-| [changelog/2026-07-23_ios_iphone_checklist.md](./changelog/2026-07-23_ios_iphone_checklist.md) | **iPhone-only 打包/适配清单** |
+| [changelog/2026-07-23_ios_roundup.md](./changelog/2026-07-23_ios_roundup.md) | **iOS 真机总整理（优先读）** |
+| [changelog/2026-07-23_ios_iphone_checklist.md](./changelog/2026-07-23_ios_iphone_checklist.md) | iPhone-only 打包/适配清单 |
 | [changelog/2026-07-23_capacitor_ios.md](./changelog/2026-07-23_capacitor_ios.md) | Capacitor + 震动 |
 | [changelog/2026-07-23_native_shell_layout.md](./changelog/2026-07-23_native_shell_layout.md) | 真机壳布局根治 |
 | [changelog/2026-07-22_drag_match_pile_shadow.md](./changelog/2026-07-22_drag_match_pile_shadow.md) | 拖拽配对 + 牌背 + 抽牌区常驻阴影 |
