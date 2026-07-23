@@ -147,24 +147,25 @@ export class GameSession {
 
   /**
    * stock[0] → waste 顶（无历史快照，供自动翻开 / 内部用）
+   * @returns 抽到 waste 的牌 id，或 null
    */
-  private flipStockToWaste(state: GameState): boolean {
-    if (state.stock.length === 0) return false;
+  private flipStockToWaste(state: GameState): CardId | null {
+    if (state.stock.length === 0) return null;
     const id = state.stock.shift()!;
     const c = state.cards[id];
-    if (!c) return false;
+    if (!c) return null;
     c.zone = 'waste';
     state.waste.push(id);
-    return true;
+    return id;
   }
 
   /**
    * 抽出叠为空且牌库仍有牌时，自动翻开一张（帮助玩家）。
-   * @returns 是否发生了自动翻开
+   * @returns 自动翻开的牌 id，或 null
    */
-  private ensureWasteHasCard(state: GameState): boolean {
-    if (state.waste.length > 0) return false;
-    if (state.status === 'won') return false;
+  private ensureWasteHasCard(state: GameState): CardId | null {
+    if (state.waste.length > 0) return null;
+    if (state.status === 'won') return null;
     return this.flipStockToWaste(state);
   }
 
@@ -186,7 +187,13 @@ export class GameSession {
     return this.history.length > 0;
   }
 
-  tapCard(id: CardId): { matched: boolean; cancelled: boolean; reselected: boolean } {
+  tapCard(id: CardId): {
+    matched: boolean;
+    cancelled: boolean;
+    reselected: boolean;
+    /** Match 后若 waste 空则自动从 stock 翻开的牌（需播放抽牌动画） */
+    autoDrewId?: CardId | null;
+  } {
     if (this.state.status === 'won') {
       return { matched: false, cancelled: false, reselected: false };
     }
@@ -219,9 +226,14 @@ export class GameSession {
     }
 
     if (canMatchCards(first, card)) {
-      this.applyMatch(next, first.id, id);
+      const autoDrewId = this.applyMatch(next, first.id, id);
       this.commit(next);
-      return { matched: true, cancelled: false, reselected: false };
+      return {
+        matched: true,
+        cancelled: false,
+        reselected: false,
+        autoDrewId,
+      };
     }
 
     // Different rank → reselect
@@ -237,7 +249,7 @@ export class GameSession {
   tryMatchPair(
     a: CardId,
     b: CardId,
-  ): { matched: boolean } {
+  ): { matched: boolean; autoDrewId?: CardId | null } {
     if (this.state.status === 'won' || a === b) {
       return { matched: false };
     }
@@ -257,20 +269,24 @@ export class GameSession {
 
     this.pushHistory();
     const next = cloneState(this.state);
-    this.applyMatch(next, a, b);
+    const autoDrewId = this.applyMatch(next, a, b);
     this.commit(next);
-    return { matched: true };
+    return { matched: true, autoDrewId };
   }
 
-  private applyMatch(state: GameState, a: CardId, b: CardId): void {
+  /**
+   * Remove pair; if puzzle remains and waste empty, auto-flip stock → waste.
+   * @returns auto-drew card id (for draw animation), or null
+   */
+  private applyMatch(state: GameState, a: CardId, b: CardId): CardId | null {
     this.removePair(state, a, b);
     state.selectedId = null;
     if (puzzleAlive(state).length === 0) {
       reclaimUnusedDeck(state);
-    } else {
-      trimSurplusDeck(state);
-      this.ensureWasteHasCard(state);
+      return null;
     }
+    trimSurplusDeck(state);
+    return this.ensureWasteHasCard(state);
   }
 
   private removePair(state: GameState, a: CardId, b: CardId): void {
@@ -336,7 +352,10 @@ export class GameSession {
       return { drew: false, recycled };
     }
 
-    this.flipStockToWaste(next);
+    if (!this.flipStockToWaste(next)) {
+      if (phase === 'full') this.history.pop();
+      return { drew: false, recycled };
+    }
     next.selectedId = null;
     this.commit(next);
     return { drew: true, recycled };

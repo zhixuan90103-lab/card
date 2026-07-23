@@ -23,6 +23,44 @@ import { Theme } from './theme';
 
 const RADIUS = 8;
 
+/**
+ * Stacking bands on `CardRenderer.root` (sortableChildren).
+ * Static piles stay low; any in-flight card uses FX bands so it cannot
+ * slip under selected / waste / other UI cards.
+ */
+export const CARD_Z = {
+  seatShadow: 3,
+  seatPlate: 5,
+  /** stock seat: stockBase + (n - idx) */
+  stockBase: 50,
+  /** waste seat: wasteBase + idx */
+  wasteBase: 500,
+  /** selected stock/waste float */
+  selectSeat: 2000,
+  /** selected puzzle: selectPuzzle + layer * 10 */
+  selectPuzzle: 1000,
+  drag: 8000,
+  /** remaining stock compact while another card draws */
+  stockCompact: 8400,
+  draw: 8500,
+  flip: 8600,
+  /** recycle queue at waste */
+  recycleWait: 8700,
+  recycleFly: 8800,
+  matchStart: 9000,
+  meetTarget: 9100,
+  meetFlyer: 9200,
+  exit: 9300,
+} as const;
+
+function stockZ(n: number, idx: number): number {
+  return CARD_Z.stockBase + (n - idx);
+}
+
+function wasteZ(idx: number): number {
+  return CARD_Z.wasteBase + idx;
+}
+
 type CardView = {
   root: Container;
   shadow: Graphics;
@@ -66,6 +104,11 @@ export class CardRenderer {
   private exiting = new Set<CardId>();
   /** flip / draw-flip — NOT busy, but card itself not draggable */
   private flipping = new Set<CardId>();
+  /**
+   * Waste cards currently under a draw-flip dim overlay.
+   * Only draw-path flips use this; puzzle reveal must not dim the draw zone.
+   */
+  private underFlipDimIds = new Set<CardId>();
   private drawMoving = false;
   private recycleAnimating = false;
   /** Intent highlight ids (free match partners) */
@@ -167,10 +210,10 @@ export class CardRenderer {
     this.stockSlot.eventMode = 'none';
     this.wasteSlot.eventMode = 'none';
     // Shadows under ghost plates; cards sit above (z≥50)
-    this.stockSeatShadow.zIndex = 3;
-    this.wasteSeatShadow.zIndex = 3;
-    this.stockSlot.zIndex = 5;
-    this.wasteSlot.zIndex = 5;
+    this.stockSeatShadow.zIndex = CARD_Z.seatShadow;
+    this.wasteSeatShadow.zIndex = CARD_Z.seatShadow;
+    this.stockSlot.zIndex = CARD_Z.seatPlate;
+    this.wasteSlot.zIndex = CARD_Z.seatPlate;
     this.root.addChild(
       this.stockSeatShadow,
       this.wasteSeatShadow,
@@ -202,7 +245,7 @@ export class CardRenderer {
   private paintEmptySlot(g: Graphics, x: number, y: number, w: number, h: number): void {
     g.clear();
     g.visible = true;
-    g.zIndex = 5;
+    g.zIndex = CARD_Z.seatPlate;
     // Soft fill plate
     g.roundRect(x, y, w, h, RADIUS);
     g.fill({ color: 0x2c3540, alpha: 0.1 });
@@ -365,13 +408,24 @@ export class CardRenderer {
 
   private setCardDim(view: CardView, on: boolean, alpha?: number): void {
     if (!on) {
+      this.underFlipDimIds.delete(view.cardId);
       view.dim.clear();
       view.dim.alpha = 1;
       view.dim.visible = false;
       return;
     }
+    this.underFlipDimIds.add(view.cardId);
     this.ensureCardDimShape(view);
     view.dim.alpha = alpha ?? PHYS.flipUnderDimAlpha;
+  }
+
+  /** Clear residual dim unless this card is actively under a draw-flip overlay. */
+  private clearDimUnlessUnderFlip(view: CardView): void {
+    if (this.underFlipDimIds.has(view.cardId)) return;
+    if (!view.dim.visible && view.dim.alpha === 1) return;
+    view.dim.clear();
+    view.dim.alpha = 1;
+    view.dim.visible = false;
   }
 
   /**
@@ -447,6 +501,7 @@ export class CardRenderer {
     } else {
       this.paintShadow(view.shadow, w, h);
     }
+    this.clearDimUnlessUnderFlip(view);
     view.back.visible = false;
     view.face.visible = true;
     view.face.texture = getFaceTexture(card.suit, card.rank);
@@ -466,6 +521,7 @@ export class CardRenderer {
     } else {
       this.paintShadow(view.shadow, w, h);
     }
+    this.clearDimUnlessUnderFlip(view);
     view.face.visible = false;
     view.back.visible = true;
     view.back.texture = getBackTexture();
@@ -523,6 +579,8 @@ export class CardRenderer {
     if (this.selectIdle?.id === id) this.stopSelectIdle();
     const view = this.views.get(id);
     if (!view) return;
+    // Never keep flip-under dim on a dragged card
+    this.setCardDim(view, false);
 
     const now = performance.now();
     let st = this.dragFollow.get(id);
@@ -544,7 +602,7 @@ export class CardRenderer {
       this.placeFromTopLeft(view, x, y, {
         rot: 0,
         scale: scaleFrom,
-        zIndex: 5000,
+        zIndex: CARD_Z.drag,
       });
       this.paintShadow(view.shadow, CARD_W, CARD_H);
       // Logical pos = finger (sync/hit paths that read dragPos stay operational)
@@ -631,7 +689,7 @@ export class CardRenderer {
         this.placeFromTopLeft(view, st.vx, st.vy, {
           rot: st.rot,
           scale: this.dragScaleAt(st),
-          zIndex: 5000,
+          zIndex: CARD_Z.drag,
         });
         // Keep dragPos on finger so any reader of dragPos stays operational
         this.dragPos.set(id, { x: st.tx, y: st.ty });
@@ -699,7 +757,7 @@ export class CardRenderer {
       const off = stockStackOffset(0);
       baseTLX = stock.x + off.x;
       baseTLY = stock.y + off.y - PHYS.floatY;
-      zIndex = 2000;
+      zIndex = CARD_Z.selectSeat;
     } else if (card.zone === 'waste') {
       const waste = getWasteRect();
       const top = state.waste[state.waste.length - 1];
@@ -709,11 +767,11 @@ export class CardRenderer {
       }
       baseTLX = waste.x;
       baseTLY = waste.y - PHYS.floatY;
-      zIndex = 2000;
+      zIndex = CARD_Z.selectSeat;
     } else {
       baseTLX = card.rect.x;
       baseTLY = card.rect.y - PHYS.floatY;
-      zIndex = 1000 + card.layer * 10;
+      zIndex = CARD_Z.selectPuzzle + card.layer * 10;
     }
 
     if (!this.selectIdle || this.selectIdle.id !== id) {
@@ -841,6 +899,7 @@ export class CardRenderer {
     view.root.pivot.set(hx, hy);
     view.root.x = c0.x;
     view.root.y = c0.y;
+    view.root.zIndex = CARD_Z.drag;
     const startX = c0.x;
     const startY = c0.y;
     const endX = home.x + hx;
@@ -856,6 +915,7 @@ export class CardRenderer {
       view.root.x = startX + (endX - startX) * ease;
       view.root.y = startY + (endY - startY) * ease;
       view.root.scale.set(startS + (1 - startS) * ease);
+      view.root.zIndex = CARD_Z.drag;
       // 回正带轻微晃动：衰减 × 余弦过冲
       const decay = Math.exp(-3.4 * u);
       const wobble = Math.cos(u * Math.PI * PHYS.snapRotWobble);
@@ -925,7 +985,7 @@ export class CardRenderer {
       view.root.y = p.cy;
       view.root.scale.set(p.scale);
       view.root.rotation = p.rotation;
-      view.root.zIndex = 6000;
+      view.root.zIndex = CARD_Z.matchStart;
     }
   }
 
@@ -1056,8 +1116,8 @@ export class CardRenderer {
       baseMs + Math.max(0, maxDist - 40) * PHYS.meetMsPerPx;
     const duration = Math.max(16, Math.min(PHYS.meetMsMax, stretched));
 
-    const flyerZ = 9500;
-    const targetZ = 9000;
+    const flyerZ = CARD_Z.meetFlyer;
+    const targetZ = CARD_Z.meetTarget;
     views.forEach((v, i) => {
       const id = orderedIds[i]!;
       const isFlyer = clusterMode ? id !== clusterId : i === flyerIndex;
@@ -1354,7 +1414,7 @@ export class CardRenderer {
         b.view.root.rotation = b.r0 + b.omega * sec;
         b.view.root.scale.set(matchScaleAt(t, b.s0));
         b.view.root.alpha = 1;
-        b.view.root.zIndex = 7000 + i;
+        b.view.root.zIndex = CARD_Z.exit + i;
         if (!isOffScreen(cx, cy)) allOff = false;
       });
       if (allOff || t >= hardMs) {
@@ -1389,11 +1449,17 @@ export class CardRenderer {
       hingeXRatio?: number;
       /** Peak breath scale; default PHYS.flipBreath; draw uses drawFlipBreath */
       breathPeak?: number;
+      /**
+       * Dim other waste cards under the flipping card.
+       * Only for draw-zone flip; puzzle reveal must stay undimmed (product).
+       */
+      dimWasteUnder?: boolean;
     },
   ): void {
     const list = ids.slice(0, 12);
     const hingeXRatio = opts?.hingeXRatio ?? 0.5;
     const breathPeak = opts?.breathPeak ?? PHYS.flipBreath;
+    const dimWasteUnder = opts?.dimWasteUnder === true;
     const targets: {
       id: CardId;
       view: CardView;
@@ -1426,15 +1492,18 @@ export class CardRenderer {
     const w = CARD_W;
     const h = CARD_H;
     const flipIds = new Set(targets.map((t) => t.id));
-    // Dim waste cards under flip — fade in (not instant)
+    // Only draw-path flips dim waste underlay (not puzzle reveal / drag time)
     const dimmed: CardView[] = [];
-    for (const wid of state.waste) {
-      if (flipIds.has(wid)) continue;
-      const v = this.views.get(wid);
-      if (!v || !v.root.visible) continue;
-      this.ensureCardDimShape(v);
-      v.dim.alpha = 0;
-      dimmed.push(v);
+    if (dimWasteUnder) {
+      for (const wid of state.waste) {
+        if (flipIds.has(wid)) continue;
+        const v = this.views.get(wid);
+        if (!v || !v.root.visible) continue;
+        this.underFlipDimIds.add(wid);
+        this.ensureCardDimShape(v);
+        v.dim.alpha = 0;
+        dimmed.push(v);
+      }
     }
     const dimPeak = PHYS.flipUnderDimAlpha;
     const dimFadeMs = Math.max(1, PHYS.flipUnderDimFadeMs);
@@ -1458,7 +1527,7 @@ export class CardRenderer {
       view.root.visible = true;
       view.root.rotation = 0;
       // Flipping card above dimmed stack
-      view.root.zIndex = Math.max(view.root.zIndex, 5600);
+      view.root.zIndex = Math.max(view.root.zIndex, CARD_Z.flip);
     }
     let t = 0;
     const duration = PHYS.flipMs;
@@ -1467,11 +1536,14 @@ export class CardRenderer {
     const tick = (arg: { deltaMS: number }) => {
       t += arg.deltaMS;
       const u = Math.min(1, t / duration);
-      // Under-stack dim: ease-in over flipUnderDimFadeMs
+      // Under-stack dim (draw flip only): ease-in over flipUnderDimFadeMs
       if (dimmed.length > 0) {
         const du = Math.min(1, t / dimFadeMs);
         const da = easeOutQuad(du) * dimPeak;
-        for (const v of dimmed) v.dim.alpha = da;
+        for (const v of dimmed) {
+          if (!v.dim.visible) this.ensureCardDimShape(v);
+          v.dim.alpha = da;
+        }
       }
       let sx: number;
       let breath: number;
@@ -1543,7 +1615,7 @@ export class CardRenderer {
       if (Math.hypot(endX - startX, endY - startY) < 0.5) {
         this.placeRestTopLeft(view, endX, endY, {
           scale: 1,
-          zIndex: 50 + (n - i),
+          zIndex: stockZ(n, i),
         });
         this.showBack(view, CARD_W, CARD_H, { shadow: false });
         continue;
@@ -1551,13 +1623,13 @@ export class CardRenderer {
       this.animating.add(id);
       view.root.visible = i < STOCK_STACK_MAX_VISIBLE;
       this.showBack(view, CARD_W, CARD_H, { shadow: false });
-      // Animate in top-left space, pivot 0
+      // Animate in top-left space, pivot 0 — FX band so compact stays above waste/select
       view.root.pivot.set(0, 0);
       view.root.x = startX;
       view.root.y = startY;
       view.root.scale.set(1);
       view.root.rotation = 0;
-      view.root.zIndex = 50 + (n - i);
+      view.root.zIndex = CARD_Z.stockCompact + (n - i);
       let t = 0;
       const tick = (arg: { deltaMS: number }) => {
         t += arg.deltaMS;
@@ -1565,12 +1637,13 @@ export class CardRenderer {
         const e = easeOutQuad(u);
         view.root.x = startX + (endX - startX) * e;
         view.root.y = startY + (endY - startY) * e;
+        view.root.zIndex = CARD_Z.stockCompact + (n - i);
         if (u >= 1) {
           ticker.remove(tick);
           this.animating.delete(id);
           this.placeRestTopLeft(view, endX, endY, {
             scale: 1,
-            zIndex: 50 + (n - i),
+            zIndex: stockZ(n, i),
           });
           if (i >= STOCK_STACK_MAX_VISIBLE) view.root.visible = false;
         }
@@ -1623,7 +1696,7 @@ export class CardRenderer {
     view.root.pivot.set(hx, hy);
     view.root.x = x0;
     view.root.y = y0;
-    view.root.zIndex = 5500;
+    view.root.zIndex = CARD_Z.draw;
     view.root.alpha = 1;
     view.root.scale.set(1);
     view.root.rotation = 0;
@@ -1634,6 +1707,7 @@ export class CardRenderer {
       // Keep busy until settle completes (product: 落稳后才可再抽)
       this.animating.add(id);
       this.drawMoving = true;
+      view.root.zIndex = CARD_Z.draw;
       const sx = view.root.x;
       const sy = view.root.y;
       const sRot = view.root.rotation;
@@ -1646,6 +1720,7 @@ export class CardRenderer {
         view.root.x = sx + (waste.x - sx) * e;
         view.root.y = sy + (waste.y - sy) * e;
         view.root.rotation = sRot * (1 - e);
+        view.root.zIndex = CARD_Z.draw;
         if (u >= 1) {
           ticker.remove(tickSettle);
           this.animating.delete(id);
@@ -1687,6 +1762,7 @@ export class CardRenderer {
           {
             hingeXRatio: PHYS.drawFlipHingeX,
             breathPeak: PHYS.drawFlipBreath,
+            dimWasteUnder: true,
           },
         );
       }
@@ -1737,7 +1813,7 @@ export class CardRenderer {
       view.root.pivot.set(0, 0);
       view.root.x = waste.x;
       view.root.y = waste.y;
-      view.root.zIndex = 3500 + i;
+      view.root.zIndex = CARD_Z.recycleWait + i;
       view.root.alpha = 1;
       view.root.scale.set(1);
       view.root.rotation = 0;
@@ -1761,6 +1837,7 @@ export class CardRenderer {
         view.root.scale.set(1);
         view.root.rotation = 0;
         view.root.visible = i < STOCK_STACK_MAX_VISIBLE;
+        view.root.zIndex = stockZ(n, i);
         this.showBack(view, w, h, { shadow: false });
       }
       // Hold busy for a beat, then continue (keep busy until onDone starts next anim)
@@ -1828,7 +1905,7 @@ export class CardRenderer {
       view.root.pivot.set(hx, hy);
       view.root.x = x0;
       view.root.y = y0;
-      view.root.zIndex = 4800;
+      view.root.zIndex = CARD_Z.recycleFly;
       view.root.scale.set(1);
       view.root.rotation = 0;
       view.root.visible = true;
@@ -1848,6 +1925,7 @@ export class CardRenderer {
         const e = easeOutQuad(u);
         view.root.x = x0 + (xFrame - x0) * e;
         view.root.y = y0 + (yFrame - y0) * e;
+        view.root.zIndex = CARD_Z.recycleFly;
         // Random Z tilt during fly-back
         view.root.rotation = tiltPeak * Math.sin(Math.PI * u);
 
@@ -1879,7 +1957,7 @@ export class CardRenderer {
             view.root.pivot.set(0, 0);
             view.root.x = stock.x + off.x;
             view.root.y = stock.y + off.y;
-            view.root.zIndex = 50 + (n - i);
+            view.root.zIndex = stockZ(n, i);
             if (i >= STOCK_STACK_MAX_VISIBLE) view.root.visible = false;
             this.showBack(view, w, h, { shadow: false });
             nextStep(step + 1);
@@ -1894,6 +1972,8 @@ export class CardRenderer {
             view.root.x = xFrame + (xStack - xFrame) * e2;
             view.root.y = yFrame + (yStack - yFrame) * e2;
             view.root.rotation = 0;
+            // Stay in FX band until fully seated
+            view.root.zIndex = CARD_Z.recycleFly;
             if (u2 >= 1) {
               ticker.remove(tickStack);
               this.animating.delete(id);
@@ -1902,7 +1982,7 @@ export class CardRenderer {
               view.root.y = stock.y + off.y;
               view.root.scale.set(1);
               view.root.rotation = 0;
-              view.root.zIndex = 50 + (n - i);
+              view.root.zIndex = stockZ(n, i);
               if (i >= STOCK_STACK_MAX_VISIBLE) view.root.visible = false;
               this.showBack(view, w, h, { shadow: false });
               nextStep(step + 1);
@@ -1962,12 +2042,12 @@ export class CardRenderer {
         if (drag) {
           this.placeFromTopLeft(view, drag.x, drag.y, {
             scale: PHYS.dragScale,
-            zIndex: 5000,
+            zIndex: CARD_Z.drag,
           });
         } else {
           this.placeRestTopLeft(view, stock.x + off.x, view.baseY, {
             scale: 1,
-            zIndex: 50 + (n - idx),
+            zIndex: stockZ(n, idx),
           });
         }
 
@@ -1982,7 +2062,7 @@ export class CardRenderer {
             // Selected: scale about card center (same amp as drag)
             this.placeFromTopLeft(view, stock.x + off.x, view.baseY - PHYS.floatY, {
               scale: PHYS.floatScale,
-              zIndex: 2000,
+              zIndex: CARD_Z.selectSeat,
             });
           }
         } else if (!drag) {
@@ -2007,11 +2087,11 @@ export class CardRenderer {
         const drag = this.dragPos.get(id);
         const isTop = id === top;
         // z: deeper cards lower; top above; drag/selected still on top
-        const baseZ = 500 + idx;
+        const baseZ = wasteZ(idx);
         if (drag) {
           this.placeFromTopLeft(view, drag.x, drag.y, {
             scale: PHYS.dragScale,
-            zIndex: 5000,
+            zIndex: CARD_Z.drag,
           });
         } else {
           this.placeRestTopLeft(view, waste.x, view.baseY, {
@@ -2028,7 +2108,7 @@ export class CardRenderer {
         if (selected && !drag && isTop) {
           this.placeFromTopLeft(view, waste.x, view.baseY - PHYS.floatY, {
             scale: PHYS.floatScale,
-            zIndex: 2000,
+            zIndex: CARD_Z.selectSeat,
           });
         }
         continue;
@@ -2044,13 +2124,13 @@ export class CardRenderer {
       if (drag) {
         this.placeFromTopLeft(view, drag.x, drag.y, {
           scale: PHYS.dragScale,
-          zIndex: 5000,
+          zIndex: CARD_Z.drag,
         });
       } else if (selected) {
         // Selected only: enlarge about card center (convention)
         this.placeFromTopLeft(view, card.rect.x, view.baseY - PHYS.floatY, {
           scale: PHYS.floatScale,
-          zIndex: 1000 + card.layer * 10,
+          zIndex: CARD_Z.selectPuzzle + card.layer * 10,
         });
       } else {
         this.placeRestTopLeft(view, card.rect.x, view.baseY, {

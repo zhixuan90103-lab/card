@@ -173,10 +173,16 @@ async function main(): Promise<void> {
       throwForceK?: number;
       /** Unit approach dir for throw angle (drag vel); meet uses flyer path */
       approachDir?: { nx: number; ny: number };
+      /**
+       * Match emptied waste → stock auto-flip already in state.
+       * Play normal draw anim (do not teleport onto waste).
+       */
+      autoDrewId?: CardId | null;
     },
   ) => {
     const startPoses = opts?.startPoses ?? cards.capturePoses(pair);
     const throwForceK = opts?.throwForceK ?? 1;
+    const autoDrewId = opts?.autoDrewId ?? null;
     // Lock pair before sync so !alive cannot hide them mid-frame
     cards.applyMatchStartPoses(startPoses);
     cards.clearHints();
@@ -184,16 +190,22 @@ async function main(): Promise<void> {
     const st = session.getState();
     const freeAfter = freeIdSet(st);
     const toFlip = puzzleNewlyFree(freeBefore, freeAfter, st, pair);
-    cards.sync(st, pair, { holdBackIds: toFlip });
+    // Skip pair + auto-drew (and rest of stock) so draw/compact animate from current seats
+    const skipSync = [
+      ...pair,
+      ...(autoDrewId ? [autoDrewId, ...st.stock] : []),
+    ];
+    cards.sync(st, skipSync, { holdBackIds: toFlip });
     // Re-apply after sync (sync skips pair, but belt-and-suspenders)
     cards.applyMatchStartPoses(startPoses);
     refreshHud();
 
-    // Flip newly-free when exit (上抛) starts — parallel with throw, not after
+    // Flip newly-free + optional auto-draw when exit (上抛) starts
     let exitDone = false;
     let flipDone = toFlip.length === 0;
+    let autoDrawDone = !autoDrewId;
     const tryFinishClear = () => {
-      if (exitDone && flipDone) refresh();
+      if (exitDone && flipDone && autoDrawDone) refresh();
     };
 
     const afterExit = () => {
@@ -212,9 +224,9 @@ async function main(): Promise<void> {
       }[],
       approachDir?: { nx: number; ny: number },
     ) => {
+      const after = session.getState();
       // Start reveal flip at the same moment as pair throw
       if (toFlip.length > 0) {
-        const after = session.getState();
         cards.flipToFace(
           toFlip,
           after,
@@ -224,6 +236,18 @@ async function main(): Promise<void> {
           },
           app.ticker,
           true,
+        );
+      }
+      // Waste emptied by match → animate auto-draw like player draw
+      if (autoDrewId) {
+        cards.playDrawMoveFlip(
+          autoDrewId,
+          after,
+          () => {
+            autoDrawDone = true;
+            tryFinishClear();
+          },
+          app.ticker,
         );
       }
       // After meet, carry is set → exit must NOT snap back to release poses
@@ -433,6 +457,7 @@ async function main(): Promise<void> {
         startPoses: tapPoses,
         clusterAtId: id,
         throwForceK: 1,
+        autoDrewId: result.autoDrewId,
       });
       return;
     }
@@ -567,7 +592,7 @@ async function main(): Promise<void> {
       const freeBefore = freeIdSet(session.getState());
       // Capture BEFORE clearDrag / match — release finger pose is the start
       const startPoses = cards.capturePoses([drag.id, targetId]);
-      const { matched } = session.tryMatchPair(drag.id, targetId);
+      const { matched, autoDrewId } = session.tryMatchPair(drag.id, targetId);
       if (matched) {
         drawsWithoutMatch = 0;
         softTipShown = false;
@@ -603,6 +628,7 @@ async function main(): Promise<void> {
           startPoses,
           throwForceK,
           approachDir,
+          autoDrewId,
         });
         return;
       }
