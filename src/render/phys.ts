@@ -161,7 +161,7 @@ export const PHYS = {
   dealLandTiltMinDeg: 8,
   dealLandTiltMaxDeg: 32,
   /** Settle after arrive: overshoot + soft shrink + angle correct (ms) */
-  dealSettleMs: 200,
+  dealSettleMs: 170,
   /** Overshoot past seat along flight dir (design px) */
   dealOvershootPx: 12,
   /** Overshoot scale punch above approach (keep small so shrink stays smooth) */
@@ -194,7 +194,7 @@ export const PHYS = {
   /** Max real cards shown on top of source pile */
   dealDeckMaxVis: 6,
   /** Single card fly bottom → seat (ms), ease-out */
-  dealMoveMs: 220,
+  dealMoveMs: 200,
   /**
    * Mid-flight stretch (local Y): peak extra scale.y = this amount.
    * scale.x squashes slightly for volume; 0 = off.
@@ -204,8 +204,8 @@ export const PHYS = {
    * Puzzle deal launch gaps: slow at first → faster (节奏感).
    * delay[i] = sum of gaps 0..i-1 with gap eased start→end.
    */
-  dealStaggerStartMs: 52,
-  dealStaggerEndMs: 14,
+  dealStaggerStartMs: 48,
+  dealStaggerEndMs: 12,
   /** @deprecated use start/end progressive gaps */
   dealStaggerMs: 72,
   dealStaggerFastMs: 48,
@@ -216,6 +216,10 @@ export const PHYS = {
   dealToStockStaggerMs: 32,
   /** Pause after stock settled before first waste flip (ms) */
   dealPauseBeforeFirstDrawMs: 160,
+  /** Full-screen dim peak alpha during open deal */
+  dealDimAlpha: 0.05,
+  /** Dim fade in / out (ms) */
+  dealDimFadeMs: 180,
   /** Random Z tilt peak during recycle fly (deg); settles 0 at frame */
   recTiltMaxDeg: 14,
   dragThreshold: 8,

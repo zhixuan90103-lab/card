@@ -36,6 +36,8 @@ const RADIUS = CARD_CORNER_RADIUS;
 export const CARD_Z = {
   seatShadow: 3,
   seatPlate: 5,
+  /** Full-screen dim during open deal (below flyers, above seats) */
+  dealDim: 100,
   /** stock seat: stockBase + (n - idx) */
   stockBase: 50,
   /** waste seat: wasteBase + idx */
@@ -247,6 +249,10 @@ export class CardRenderer {
   private lastWasteSeatKey = '';
   private lastStockSlotKey = '';
   private lastWasteSlotKey = '';
+  /** Full-screen dim during open-deal cascade */
+  private dealDim = new Graphics();
+  private dealDimFadeTick: ((t: { deltaMS: number }) => void) | null = null;
+  private dealDimTicker: TickerLike | null = null;
 
   constructor() {
     this.root.label = 'cards';
@@ -255,11 +261,15 @@ export class CardRenderer {
     this.wasteSeatShadow.eventMode = 'none';
     this.stockSlot.eventMode = 'none';
     this.wasteSlot.eventMode = 'none';
+    this.dealDim.eventMode = 'none';
+    this.dealDim.visible = false;
+    this.dealDim.label = 'dealDim';
     // Shadows under ghost plates; cards sit above (z≥50)
     this.stockSeatShadow.zIndex = CARD_Z.seatShadow;
     this.wasteSeatShadow.zIndex = CARD_Z.seatShadow;
     this.stockSlot.zIndex = CARD_Z.seatPlate;
     this.wasteSlot.zIndex = CARD_Z.seatPlate;
+    // dealDim is NOT a child of cards.root — attached under cards on world (see ensureDealDimUnderCards)
     this.root.addChild(
       this.stockSeatShadow,
       this.wasteSeatShadow,
@@ -305,12 +315,140 @@ export class CardRenderer {
     this.dealAnimating = false;
     this.dealFinished = false;
     this.hideDealSourceDeck();
+    this.hideDealDim(true);
   }
 
   private hideDealSourceDeck(): void {
     if (this.dealSourceRoot) {
       this.dealSourceRoot.visible = false;
     }
+  }
+
+  private stopDealDimFade(): void {
+    if (this.dealDimFadeTick && this.dealDimTicker) {
+      this.dealDimTicker.remove(this.dealDimFadeTick);
+    }
+    this.dealDimFadeTick = null;
+    this.dealDimTicker = null;
+  }
+
+  /**
+   * World layer order during deal:
+   *   pileTray (0) → dealDim (1) → cards.root (100)
+   * Never parent dim under cards — that would sort against card z and bury seats.
+   */
+  private ensureDealDimUnderCards(): void {
+    const parent = this.root.parent;
+    if (!parent) return;
+
+    parent.sortableChildren = true;
+
+    // Tray under veil
+    for (const ch of parent.children) {
+      if (ch !== this.root && ch !== this.dealDim) {
+        ch.zIndex = 0;
+      }
+    }
+    this.dealDim.zIndex = 1;
+    this.root.zIndex = 100;
+
+    if (this.dealDim.parent !== parent) {
+      // Insert just below cards.root
+      const idx = parent.getChildIndex(this.root);
+      parent.addChildAt(this.dealDim, idx);
+    } else if (parent.getChildIndex(this.dealDim) > parent.getChildIndex(this.root)) {
+      parent.addChildAt(this.dealDim, parent.getChildIndex(this.root));
+    }
+    parent.sortChildren();
+  }
+
+  private setDrawZoneChromeDimmed(on: boolean): void {
+    // Seat plates are on cards layer (above veil) — fade so tray area still reads dimmed
+    const a = on ? 0.35 : 1;
+    this.stockSlot.alpha = a;
+    this.wasteSlot.alpha = a;
+    this.stockSeatShadow.alpha = a;
+    this.wasteSeatShadow.alpha = a;
+  }
+
+  /** Darken bg + draw tray only; all cards stay fully bright above the veil. */
+  private showDealDim(ticker: TickerLike): void {
+    this.stopDealDimFade();
+    this.ensureDealDimUnderCards();
+    this.setDrawZoneChromeDimmed(true);
+    const padX = 120;
+    const padY = 240;
+    this.dealDim.clear();
+    this.dealDim.rect(
+      -padX,
+      -padY,
+      DESIGN_WIDTH + padX * 2,
+      DESIGN_HEIGHT + padY * 2,
+    );
+    this.dealDim.fill({ color: 0x1a1410, alpha: 1 });
+    this.dealDim.visible = true;
+    this.dealDim.alpha = 0;
+    const peak = Math.max(0, Math.min(1, PHYS.dealDimAlpha));
+    const fadeMs = Math.max(40, PHYS.dealDimFadeMs);
+    let t = 0;
+    const tick = (arg: { deltaMS: number }) => {
+      t += arg.deltaMS;
+      const u = Math.min(1, t / fadeMs);
+      this.dealDim.alpha = peak * easeOutQuad(u);
+      if (u >= 1) {
+        ticker.remove(tick);
+        this.dealDimFadeTick = null;
+        this.dealDimTicker = null;
+        this.dealDim.alpha = peak;
+        this.ensureDealDimUnderCards();
+      }
+    };
+    this.dealDimFadeTick = tick;
+    this.dealDimTicker = ticker;
+    ticker.add(tick);
+  }
+
+  private clearDealDimNow(): void {
+    this.stopDealDimFade();
+    this.dealDim.visible = false;
+    this.dealDim.alpha = 0;
+    this.setDrawZoneChromeDimmed(false);
+    this.root.zIndex = 0;
+    if (this.dealDim.parent) {
+      this.dealDim.parent.removeChild(this.dealDim);
+    }
+  }
+
+  /** Fade out dim, then detach. `immediate` skips fade (cancel / bootstrap). */
+  private hideDealDim(immediate = false, ticker?: TickerLike): void {
+    if (immediate || !ticker || !this.dealDim.visible || this.dealDim.alpha <= 0.001) {
+      this.clearDealDimNow();
+      return;
+    }
+    this.stopDealDimFade();
+    const startA = this.dealDim.alpha;
+    const fadeMs = Math.max(40, PHYS.dealDimFadeMs);
+    let t = 0;
+    const tick = (arg: { deltaMS: number }) => {
+      t += arg.deltaMS;
+      const u = Math.min(1, t / fadeMs);
+      this.dealDim.alpha = startA * (1 - easeOutQuad(u));
+      // Ease seat chrome back up with the veil
+      const chrome = 0.35 + (1 - 0.35) * easeOutQuad(u);
+      this.stockSlot.alpha = chrome;
+      this.wasteSlot.alpha = chrome;
+      this.stockSeatShadow.alpha = chrome;
+      this.wasteSeatShadow.alpha = chrome;
+      if (u >= 1) {
+        ticker.remove(tick);
+        this.dealDimFadeTick = null;
+        this.dealDimTicker = null;
+        this.clearDealDimNow();
+      }
+    };
+    this.dealDimFadeTick = tick;
+    this.dealDimTicker = ticker;
+    ticker.add(tick);
   }
 
   /**
@@ -385,6 +523,7 @@ export class CardRenderer {
 
     this.dealAnimating = true;
     this.hideDealSourceDeck();
+    this.showDealDim(ticker);
 
     const allAnimIds = new Set<CardId>([
       ...puzzle.map((c) => c.id),
@@ -582,6 +721,7 @@ export class CardRenderer {
     const seatPuzzleCard = (card: Card, restZ: number, faceUp: boolean) => {
       const v = this.views.get(card.id);
       if (!v) return;
+      // Normal puzzle z — entire cards.root is above world dealDim
       this.placeRestTopLeft(v, card.rect.x, card.rect.y, {
         scale: 1,
         zIndex: restZ,
@@ -599,6 +739,7 @@ export class CardRenderer {
       for (const clean of this.dealTickCleanups) clean();
       this.dealTickCleanups = [];
       this.hideDealSourceDeck();
+      this.hideDealDim(false, ticker);
       this.dealAnimating = false;
       onDone();
     };
