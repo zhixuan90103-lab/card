@@ -1,4 +1,4 @@
-import { GameSession, pickCard } from './core';
+import { GameSession, pickCard, type GameSessionSnapshot } from './core';
 import { dropMatchTarget, freeCardIds } from './core/rules';
 import { isHardDead, isSoftStuck } from './core/stuck';
 import type { CardId, GameState, Level } from './core/types';
@@ -33,10 +33,57 @@ import {
   hapticSuccess,
   isNativeApp,
 } from './native/haptics';
-import { watchAppLifecycle } from './native/appLifecycle';
+import { waitForForegroundReady, watchAppLifecycle } from './native/appLifecycle';
 import { screenToDesign } from './viewport/design';
 import { getPhoneFrameEl } from './viewport/phoneFrame';
 import { applyShellLayout } from './viewport/shellLayout';
+
+const NATIVE_RESUME_STORAGE_KEY = 'card.nativeResumeSnapshot.v1';
+
+type NativeResumeSnapshot = {
+  version: 1;
+  savedAt: number;
+  runIndex: number;
+  runSeed: number;
+  difficulty: RunDeal['meta']['difficulty'];
+  drawsWithoutMatch: number;
+  softTipShown: boolean;
+  lastWon: boolean;
+  session: GameSessionSnapshot;
+};
+
+function readNativeResumeSnapshot(): NativeResumeSnapshot | null {
+  if (!isNativeApp()) return null;
+  try {
+    const raw = window.localStorage.getItem(NATIVE_RESUME_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<NativeResumeSnapshot>;
+    if (
+      parsed.version !== 1 ||
+      typeof parsed.runIndex !== 'number' ||
+      typeof parsed.runSeed !== 'number' ||
+      !parsed.session
+    ) {
+      return null;
+    }
+    return parsed as NativeResumeSnapshot;
+  } catch (e) {
+    console.warn('[lifecycle] failed to read native resume snapshot', e);
+    return null;
+  }
+}
+
+function writeNativeResumeSnapshot(snapshot: NativeResumeSnapshot): void {
+  if (!isNativeApp()) return;
+  try {
+    window.localStorage.setItem(
+      NATIVE_RESUME_STORAGE_KEY,
+      JSON.stringify(snapshot),
+    );
+  } catch (e) {
+    console.warn('[lifecycle] failed to persist native resume snapshot', e);
+  }
+}
 
 function freeIdSet(state: GameState): Set<CardId> {
   return new Set(freeCardIds(state));
@@ -84,15 +131,23 @@ async function main(): Promise<void> {
   // D29: WebGPU-first everywhere; mobile uses no-MSAA + resize debounce (design/22)
   console.info('[card] render policy: WebGPU-first (D29)');
 
+  const restored = readNativeResumeSnapshot();
+
   /** 单关无限：局号 + seed；第 3/6/9… 局极难 */
-  let runIndex = 1;
-  let run: RunDeal = startNewRun(undefined, difficultyForRun(1));
+  let runIndex = restored?.runIndex ?? 1;
+  let run: RunDeal = restored
+    ? replayRun(restored.runSeed, restored.difficulty ?? difficultyForRun(runIndex))
+    : startNewRun(undefined, difficultyForRun(1));
   let level: Level = run.level;
-  let session = new GameSession(level, {
-    shuffleSeed: Math.floor(Math.random() * 1e9),
-  });
-  let drawsWithoutMatch = 0;
-  let softTipShown = false;
+  let session = restored
+    ? GameSession.fromSnapshot(level, restored.session)
+    : new GameSession(level, {
+        shuffleSeed: Math.floor(Math.random() * 1e9),
+        // Cold start plays open-deal; first waste card after cascade
+        autoOpenWaste: false,
+      });
+  let drawsWithoutMatch = restored?.drawsWithoutMatch ?? 0;
+  let softTipShown = restored?.softTipShown ?? false;
 
   syncPileRects(session);
 
@@ -121,18 +176,70 @@ async function main(): Promise<void> {
 
   let hud!: Hud;
 
-  const applyRun = (next: RunDeal, opts: { bumpIndex: boolean }) => {
+  const applyRun = (
+    next: RunDeal,
+    opts: { bumpIndex: boolean; skipDeal?: boolean },
+  ) => {
     run = next;
     level = next.level;
     if (opts.bumpIndex) runIndex += 1;
     session = new GameSession(level, {
       shuffleSeed: Math.floor(Math.random() * 1e9),
+      // Open-deal owns the first waste flip; keep waste empty until anim ends
+      autoOpenWaste: opts.skipDeal ? true : false,
     });
     drawsWithoutMatch = 0;
     softTipShown = false;
     syncPileRects(session);
     cards.bootstrap(session.getState());
-    refresh();
+    cards.clearHints();
+    if (opts.skipDeal) {
+      refresh();
+      return;
+    }
+    startOpenDeal();
+  };
+
+  /** Center-deck deal → stock return → first waste flip (only then waste has a card) */
+  const startOpenDeal = () => {
+    syncPileRects(session);
+    const st = session.getState();
+    // Waste must be empty during cascade — red-box seat is blank until handoff
+    if (st.waste.length > 0) {
+      console.warn('[deal] waste not empty at open-deal start; forcing empty visual');
+    }
+    const skip = Object.values(st.cards)
+      .filter((c) => c.alive && (c.zone === 'puzzle' || c.zone === 'stock'))
+      .map((c) => c.id);
+    cards.sync(st, skip);
+    refreshHud();
+    cards.playLevelDeal(st, app.ticker, () => {
+      // Strict order: puzzle + stock return finished → then first waste
+      const cur = session.getState();
+      if (cur.waste.length > 0) {
+        refresh();
+        return;
+      }
+      if (cur.stock.length === 0) {
+        refresh();
+        return;
+      }
+      const { drew } = session.draw({ phase: 'full' });
+      if (!drew) {
+        refresh();
+        return;
+      }
+      syncPileRects(session);
+      const after = session.getState();
+      const wasteTop = after.waste[after.waste.length - 1];
+      if (!wasteTop) {
+        refresh();
+        return;
+      }
+      cards.sync(after, after.stock.concat(wasteTop));
+      refreshHud();
+      cards.playDrawMoveFlip(wasteTop, after, () => refresh(), app.ticker);
+    });
   };
 
   /** 新 seed 新局（按新局号取难度） */
@@ -164,7 +271,21 @@ async function main(): Promise<void> {
     return null;
   };
 
-  let lastWon = false;
+  let lastWon = restored?.lastWon ?? false;
+  const persistNativeSnapshot = () => {
+    writeNativeResumeSnapshot({
+      version: 1,
+      savedAt: Date.now(),
+      runIndex,
+      runSeed: run.meta.seed,
+      difficulty: run.meta.difficulty ?? difficultyForRun(runIndex),
+      drawsWithoutMatch,
+      softTipShown,
+      lastWon,
+      session: session.snapshot(),
+    });
+  };
+
   const refreshHud = () => {
     const st = session.getState();
     const hard = isHardDead(st);
@@ -182,6 +303,7 @@ async function main(): Promise<void> {
       softTip: softTipText(st),
       hardDead: hard,
     });
+    persistNativeSnapshot();
   };
 
   const refresh = () => {
@@ -376,7 +498,11 @@ async function main(): Promise<void> {
     hud.layoutPiles();
   });
 
-  refresh();
+  if (restored) {
+    refresh();
+  } else {
+    startOpenDeal();
+  }
 
   const frame = getPhoneFrameEl();
 
@@ -788,15 +914,19 @@ async function main(): Promise<void> {
    * Soft re-render forbidden (D28).
    */
   let resumeBusy = false;
-  let resumeQueued = false;
+  let resumeQueued: 'present' | 'rehydrate' | null = null;
+  let resumeRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const afterRehydrate = () => {
+  const afterViewReady = () => {
     rebindView();
     bindPointer(canvas);
     applyShellLayout();
     activeDrag = null;
-    // Sync sprites + HUD onto the *new* CardRenderer / canvas
     refresh();
+  };
+
+  const afterRehydrate = () => {
+    afterViewReady();
     try {
       app.ticker.start();
       app.renderer.render(app.stage);
@@ -805,19 +935,50 @@ async function main(): Promise<void> {
     }
   };
 
+  const afterResumePresent = () => {
+    afterViewReady();
+    view.present();
+  };
+
+  const runQueuedResume = () => {
+    const mode = resumeQueued;
+    resumeQueued = null;
+    if (mode === 'rehydrate') runResumeRehydrate();
+    else if (mode === 'present') runResumePresent();
+  };
+
+  const scheduleResumeRetry = (
+    mode: 'present' | 'rehydrate',
+    delayMs = 300,
+  ) => {
+    if (resumeRetryTimer) clearTimeout(resumeRetryTimer);
+    resumeRetryTimer = setTimeout(() => {
+      resumeRetryTimer = null;
+      if (mode === 'rehydrate') runResumeRehydrate();
+      else runResumePresent();
+    }, delayMs);
+  };
+
   const runResumeRehydrate = () => {
+    if (resumeRetryTimer) {
+      clearTimeout(resumeRetryTimer);
+      resumeRetryTimer = null;
+    }
     // Native may call resume while document.hidden is still true for one frame —
     // do not gate on document.hidden here (appLifecycle already decided foreground).
     if (resumeBusy) {
-      resumeQueued = true;
+      resumeQueued = 'rehydrate';
       return;
     }
     resumeBusy = true;
-    resumeQueued = false;
+    resumeQueued = null;
     void (async () => {
       try {
-        // One frame for shell / VV after appState active (reduces 0×0 frame race)
-        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+        if (!(await waitForForegroundReady())) {
+          console.warn('[lifecycle] foreground not ready; retry rehydrate');
+          scheduleResumeRetry('rehydrate', 300);
+          return;
+        }
         applyShellLayout();
         syncPileRects(session);
         await view.rehydrate(session.getState());
@@ -826,6 +987,11 @@ async function main(): Promise<void> {
         console.error('[lifecycle] rehydrate failed', e);
         try {
           await new Promise((r) => setTimeout(r, 200));
+          if (!(await waitForForegroundReady())) {
+            console.warn('[lifecycle] foreground not ready after failure; retry');
+            scheduleResumeRetry('rehydrate', 500);
+            return;
+          }
           applyShellLayout();
           await view.rehydrate(session.getState());
           afterRehydrate();
@@ -834,10 +1000,38 @@ async function main(): Promise<void> {
         }
       } finally {
         resumeBusy = false;
-        if (resumeQueued) {
-          resumeQueued = false;
-          runResumeRehydrate();
+        runQueuedResume();
+      }
+    })();
+  };
+
+  const runResumePresent = () => {
+    if (resumeRetryTimer) {
+      clearTimeout(resumeRetryTimer);
+      resumeRetryTimer = null;
+    }
+    if (resumeBusy) {
+      if (resumeQueued !== 'rehydrate') resumeQueued = 'present';
+      return;
+    }
+    resumeBusy = true;
+    resumeQueued = null;
+    void (async () => {
+      try {
+        if (!(await waitForForegroundReady())) {
+          console.warn('[lifecycle] foreground not ready; retry present');
+          scheduleResumeRetry('present', 300);
+          return;
         }
+        applyShellLayout();
+        syncPileRects(session);
+        afterResumePresent();
+      } catch (e) {
+        console.error('[lifecycle] present resume failed', e);
+        runResumeRehydrate();
+      } finally {
+        resumeBusy = false;
+        runQueuedResume();
       }
     })();
   };
@@ -849,16 +1043,27 @@ async function main(): Promise<void> {
 
   const lifecycle = watchAppLifecycle({
     onSuspend: () => {
+      if (resumeRetryTimer) {
+        clearTimeout(resumeRetryTimer);
+        resumeRetryTimer = null;
+      }
       activeDrag = null;
+      persistNativeSnapshot();
       view.suspend();
     },
     onResume: () => {
+      if (isNativeApp()) {
+        persistNativeSnapshot();
+        console.info('[lifecycle] native resume handled by bridge rebuild');
+        return;
+      }
       runResumeRehydrate();
     },
   });
 
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
+      if (resumeRetryTimer) clearTimeout(resumeRetryTimer);
       lifecycle.dispose();
       unbindPointer?.();
       view.destroy();
@@ -878,6 +1083,7 @@ async function main(): Promise<void> {
     'gpu',
     view.backend,
     view.prefersWebGpu ? 'policy=webgpu-first' : 'policy=webgl-forced',
+    restored ? 'restored=native-snapshot' : 'restored=fresh',
   );
 }
 

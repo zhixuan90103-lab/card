@@ -130,6 +130,13 @@ export class CardRenderer {
   private underFlipDimIds = new Set<CardId>();
   private drawMoving = false;
   private recycleAnimating = false;
+  /** Level-enter puzzle deal cascade — blocks input via isBusy */
+  private dealAnimating = false;
+  /** open-deal onDone fired (prevent mid-cascade first-draw) */
+  private dealFinished = false;
+  private dealTickCleanups: Array<() => void> = [];
+  /** Optional leftover intro root (cleaned on cancel) */
+  private dealSourceRoot: Container | null = null;
   /** Intent highlight ids (free match partners) */
   private hintIds = new Set<CardId>();
   /** Active drag: design-space top-left (finger grab space) */
@@ -263,6 +270,7 @@ export class CardRenderer {
 
   /** Call after `loadCardFaceAssets()`. */
   bootstrap(state: GameState): void {
+    this.cancelLevelDeal();
     // Return all live views to pool, then re-acquire only alive cards
     for (const id of [...this.views.keys()]) {
       this.releaseView(id);
@@ -272,6 +280,8 @@ export class CardRenderer {
     this.exiting.clear();
     this.flipping.clear();
     this.underFlipDimIds.clear();
+    this.drawMoving = false;
+    this.recycleAnimating = false;
     this.hintIds.clear();
     this.dragPos.clear();
     this.dragFollow.clear();
@@ -287,6 +297,437 @@ export class CardRenderer {
       this.acquireView(card);
     }
     this.sync(state);
+  }
+
+  private cancelLevelDeal(): void {
+    for (const clean of this.dealTickCleanups) clean();
+    this.dealTickCleanups = [];
+    this.dealAnimating = false;
+    this.dealFinished = false;
+    this.hideDealSourceDeck();
+  }
+
+  private hideDealSourceDeck(): void {
+    if (this.dealSourceRoot) {
+      this.dealSourceRoot.visible = false;
+    }
+  }
+
+  /**
+   * Level enter open deal (no center-deck intro):
+   * 1) Puzzle cards fly from below screen → seats (back → free flip)
+   * 2) Remaining stock cards fly from below → stock seats
+   * 3) onDone → first waste flip (main)
+   */
+  playLevelDeal(
+    state: GameState,
+    ticker: TickerLike,
+    onDone: () => void,
+  ): void {
+    this.cancelLevelDeal();
+
+    const puzzle = Object.values(state.cards).filter(
+      (c) => c.alive && c.zone === 'puzzle',
+    );
+    puzzle.sort((a, b) => {
+      if (a.layer !== b.layer) return a.layer - b.layer;
+      if (a.rect.y !== b.rect.y) return a.rect.y - b.rect.y;
+      return a.rect.x - b.rect.x;
+    });
+
+    const stockIds = [...state.stock];
+    const stockCards = stockIds
+      .map((id) => state.cards[id])
+      .filter((c): c is Card => !!c && c.alive);
+
+    if (puzzle.length === 0 && stockCards.length === 0) {
+      onDone();
+      return;
+    }
+
+    const stockR = getStockRect();
+    const hx = this.cardHx;
+    const hy = this.cardHy;
+    const moveMs = Math.max(80, PHYS.dealMoveMs);
+    const settleMs = Math.max(60, PHYS.dealSettleMs);
+    const toStockMs = Math.max(60, PHYS.dealToStockMs);
+    const staggerStart = Math.max(20, PHYS.dealStaggerStartMs);
+    const staggerEnd = Math.max(12, Math.min(staggerStart, PHYS.dealStaggerEndMs));
+    const sStagger = Math.max(12, PHYS.dealToStockStaggerMs);
+    /**
+     * Cumulative launch delay: early gaps long, later gaps short (前慢后快).
+     * easeInQuad on progress so acceleration of the cascade is clear.
+     */
+    const launchDelayAt = (i: number, n: number): number => {
+      if (i <= 0 || n <= 1) return 0;
+      let delay = 0;
+      const last = n - 1;
+      for (let k = 0; k < i; k++) {
+        const t = last <= 1 ? 1 : k / last;
+        const ease = t * t; // ease-in: stay slow longer, then speed up
+        delay += staggerStart + (staggerEnd - staggerStart) * ease;
+      }
+      return delay;
+    };
+    const pauseBeforeDraw = Math.max(0, PHYS.dealPauseBeforeFirstDrawMs);
+    const spawnY = DESIGN_HEIGHT + PHYS.dealIntroSpawnBelow;
+    /** Single deal origin under screen center — not a bottom line */
+    const spawnCx = DESIGN_WIDTH / 2;
+    const spawnJitterX = PHYS.dealIntroSpawnJitterX;
+    const fromScale = PHYS.dealIntroFromScale;
+    const approachScale = PHYS.dealApproachScale;
+    const flightTiltMax = (PHYS.dealIntroTiltMaxDeg * Math.PI) / 180;
+    const landTiltMin = (PHYS.dealLandTiltMinDeg * Math.PI) / 180;
+    const landTiltMax = (PHYS.dealLandTiltMaxDeg * Math.PI) / 180;
+    const overshootPx = PHYS.dealOvershootPx;
+    const overshootScaleBoost = PHYS.dealOvershootScaleBoost;
+    const flightStretch = Math.max(0, Math.min(0.4, PHYS.dealFlightStretch));
+
+    this.dealAnimating = true;
+    this.hideDealSourceDeck();
+
+    const allAnimIds = new Set<CardId>([
+      ...puzzle.map((c) => c.id),
+      ...stockIds,
+    ]);
+    this.sync(state, allAnimIds);
+
+    // Pre-create views at single bottom origin (hidden until launch)
+    for (const card of [...puzzle, ...stockCards]) {
+      let view = this.views.get(card.id);
+      if (!view) view = this.acquireView(card);
+      this.animating.add(card.id);
+      view.root.visible = false;
+      view.root.pivot.set(hx, hy);
+      view.root.x = spawnCx;
+      view.root.y = spawnY;
+      view.root.scale.set(fromScale);
+      this.showBack(view, CARD_W, CARD_H, { shadow: false });
+    }
+
+    const schedule = (delayMs: number, fn: () => void) => {
+      if (delayMs <= 0) {
+        fn();
+        return;
+      }
+      let waited = 0;
+      const tick = (a: { deltaMS: number }) => {
+        waited += a.deltaMS;
+        if (waited < delayMs) return;
+        ticker.remove(tick);
+        fn();
+      };
+      ticker.add(tick);
+      this.dealTickCleanups.push(() => ticker.remove(tick));
+    };
+
+    const puzzlePending = new Set(puzzle.map((c) => c.id));
+    const stockPending = new Set(stockIds);
+    let phase: 'wait' | 'puzzle' | 'stock' | 'done' = 'wait';
+
+    /** All cards leave from one bottom-center point (fan to targets). */
+    const spawnFromBottom = () => {
+      const jx = (Math.random() * 2 - 1) * spawnJitterX;
+      return {
+        x: spawnCx + jx,
+        y: spawnY,
+        scale: fromScale,
+      };
+    };
+
+    /**
+     * Fly: ease-out + varied spin → approach with residual angle.
+     * Settle: overshoot past seat + scale punch, then snap back, shrink, straighten.
+     */
+    const flyTo = (
+      id: CardId,
+      from: { x: number; y: number; scale: number },
+      to: {
+        x: number;
+        y: number;
+        scale: number;
+        restTL?: { x: number; y: number };
+        restZ?: number;
+      },
+      duration: number,
+      zBase: number,
+      onArrive: () => void,
+    ) => {
+      const view = this.views.get(id);
+      if (!view) {
+        onArrive();
+        return;
+      }
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        onArrive();
+      };
+
+      // Independent peak vs land tilt so cards don't all look the same
+      const peakSign = Math.random() < 0.5 ? -1 : 1;
+      const landSign =
+        Math.random() < 0.35 ? -peakSign : peakSign; // sometimes reverse on land
+      const tiltPeak =
+        peakSign * flightTiltMax * (0.4 + Math.random() * 0.6);
+      const landTilt =
+        landSign *
+        (landTiltMin + Math.random() * (landTiltMax - landTiltMin));
+      const sApproach = approachScale * (0.92 + Math.random() * 0.16);
+      // Flight direction for overshoot
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = dx / len;
+      const ny = dy / len;
+      const oPx = overshootPx * (0.75 + Math.random() * 0.5);
+      const overX = to.x + nx * oPx;
+      const overY = to.y + ny * oPx;
+      const sOver =
+        sApproach + overshootScaleBoost * (0.7 + Math.random() * 0.6);
+      // Per-card spin phase (fixed for this flight)
+      const spinPhase = 0.72 + Math.random() * 0.4;
+
+      this.animating.add(id);
+      view.root.visible = true;
+      view.root.pivot.set(hx, hy);
+      view.root.x = from.x;
+      view.root.y = from.y;
+      view.root.scale.set(from.scale);
+      view.root.rotation = 0;
+      view.root.zIndex = zBase;
+      this.showBack(view, CARD_W, CARD_H, { shadow: true });
+
+      let t = 0;
+      const tickFly = (arg: { deltaMS: number }) => {
+        t += arg.deltaMS;
+        const u = Math.min(1, t / duration);
+        const e = easeOutQuad(u);
+        view.root.x = from.x + (to.x - from.x) * e;
+        view.root.y = from.y + (to.y - from.y) * e;
+        const s = from.scale + (sApproach - from.scale) * e;
+        // Mid-flight stretch along local Y (拉长), slight X squash
+        const stretchWave = Math.sin(Math.PI * u); // 0→1→0
+        const sy = s * (1 + flightStretch * stretchWave);
+        const sx = s * (1 - flightStretch * stretchWave * 0.45);
+        view.root.scale.set(sx, sy);
+        const spinShape = Math.sin(Math.PI * Math.min(1, u * spinPhase));
+        view.root.rotation =
+          tiltPeak * spinShape * (1 - e * 0.25) + landTilt * e;
+        view.root.zIndex = zBase;
+        if (u >= 1) {
+          ticker.remove(tickFly);
+          // Settle: light pos overshoot + smooth scale shrink + angle correct
+          // Scale uses one continuous easeInOut over full settle (no abrupt drop)
+          const xA = to.x;
+          const yA = to.y;
+          const rA = landTilt;
+          const sA = sApproach;
+          let ts = 0;
+          const tickSettle = (a: { deltaMS: number }) => {
+            ts += a.deltaMS;
+            const u2 = Math.min(1, ts / settleMs);
+            // Position: soft overshoot then return (smoothstep, not back-ease snap)
+            let px: number;
+            let py: number;
+            if (u2 < 0.38) {
+              const p = easeOutQuad(u2 / 0.38);
+              px = xA + (overX - xA) * p;
+              py = yA + (overY - yA) * p;
+            } else {
+              const p = easeInOutSmooth((u2 - 0.38) / 0.62);
+              px = overX + (to.x - overX) * p;
+              py = overY + (to.y - overY) * p;
+            }
+            // Scale: continuous big→1 (uniform), stretch already gone at land
+            const sEase = easeInOutSmooth(u2);
+            const base = sA + (1 - sA) * sEase;
+            const bump =
+              (sOver - sA) * Math.sin(Math.PI * Math.min(1, u2 * 1.1)) * 0.45;
+            const sNow = base + bump * (1 - sEase);
+            const rNow = rA * (1 - sEase);
+            view.root.x = px;
+            view.root.y = py;
+            view.root.scale.set(sNow, sNow);
+            view.root.rotation = rNow;
+            view.root.zIndex = zBase;
+            if (u2 >= 1) {
+              ticker.remove(tickSettle);
+              view.root.rotation = 0;
+              view.root.scale.set(1);
+              if (to.restTL != null && to.restZ != null) {
+                this.placeRestTopLeft(view, to.restTL.x, to.restTL.y, {
+                  scale: 1,
+                  zIndex: to.restZ,
+                });
+              } else {
+                view.root.x = to.x;
+                view.root.y = to.y;
+              }
+              finish();
+            }
+          };
+          ticker.add(tickSettle);
+          this.dealTickCleanups.push(() => ticker.remove(tickSettle));
+        }
+      };
+      ticker.add(tickFly);
+      this.dealTickCleanups.push(() => {
+        ticker.remove(tickFly);
+        this.animating.delete(id);
+      });
+    };
+
+    const seatPuzzleCard = (card: Card, restZ: number, faceUp: boolean) => {
+      const v = this.views.get(card.id);
+      if (!v) return;
+      this.placeRestTopLeft(v, card.rect.x, card.rect.y, {
+        scale: 1,
+        zIndex: restZ,
+      });
+      if (faceUp) this.showFace(v, card, CARD_W, CARD_H, false, { shadow: true });
+      else this.showBack(v, CARD_W, CARD_H, { shadow: true });
+    };
+
+    const handOffToFirstDraw = () => {
+      if (this.dealFinished) return;
+      if (phase !== 'stock') return;
+      if (puzzlePending.size > 0 || stockPending.size > 0) return;
+      this.dealFinished = true;
+      phase = 'done';
+      for (const clean of this.dealTickCleanups) clean();
+      this.dealTickCleanups = [];
+      this.hideDealSourceDeck();
+      this.dealAnimating = false;
+      onDone();
+    };
+
+    const runStockReturn = () => {
+      if (phase !== 'puzzle') return;
+      if (puzzlePending.size > 0) return;
+      phase = 'stock';
+      if (stockIds.length === 0) {
+        schedule(pauseBeforeDraw, handOffToFirstDraw);
+        return;
+      }
+      // Deep first so stock[0] (top) lands last
+      const order = [...stockIds].reverse();
+      for (let i = 0; i < order.length; i++) {
+        const id = order[i]!;
+        const stockIndex = stockIds.indexOf(id);
+        const off = stockStackOffset(
+          Math.min(stockIndex, STOCK_STACK_MAX_VISIBLE - 1),
+        );
+        const endTLX = stockR.x + off.x;
+        const endTLY = stockR.y + off.y;
+        const n = stockIds.length;
+        const endCx = endTLX + hx;
+        schedule(i * sStagger, () => {
+          if (phase !== 'stock') return;
+          const from = spawnFromBottom();
+          flyTo(
+            id,
+            from,
+            {
+              x: endCx,
+              y: endTLY + hy,
+              scale: 1,
+              restTL: { x: endTLX, y: endTLY },
+              restZ: stockZ(n, stockIndex),
+            },
+            toStockMs,
+            CARD_Z.draw + i,
+            () => {
+              this.animating.delete(id);
+              const v = this.views.get(id);
+              if (v) {
+                this.placeRestTopLeft(v, endTLX, endTLY, {
+                  scale: 1,
+                  zIndex: stockZ(n, stockIndex),
+                });
+                this.showBack(v, CARD_W, CARD_H, { shadow: false });
+                if (stockIndex >= STOCK_STACK_MAX_VISIBLE) {
+                  v.root.visible = false;
+                }
+              }
+              if (!stockPending.delete(id)) return;
+              if (stockPending.size === 0) {
+                schedule(pauseBeforeDraw, handOffToFirstDraw);
+              }
+            },
+          );
+        });
+      }
+    };
+
+    const markPuzzleDone = (id: CardId) => {
+      if (phase !== 'puzzle') return;
+      if (!puzzlePending.delete(id)) return;
+      if (puzzlePending.size === 0) runStockReturn();
+    };
+
+    const runPuzzleDeal = () => {
+      if (phase !== 'wait') return;
+      phase = 'puzzle';
+      if (puzzle.length === 0) {
+        runStockReturn();
+        return;
+      }
+
+      const nP = puzzle.length;
+      for (let i = 0; i < nP; i++) {
+        const card = puzzle[i]!;
+        schedule(launchDelayAt(i, nP), () => {
+          if (phase !== 'puzzle') return;
+          const endX = card.rect.x + hx;
+          const endY = card.rect.y + hy;
+          const restZ = card.layer * 10;
+          const from = spawnFromBottom();
+          flyTo(
+            card.id,
+            from,
+            {
+              x: endX,
+              y: endY,
+              scale: 1,
+              restTL: { x: card.rect.x, y: card.rect.y },
+              restZ,
+            },
+            moveMs,
+            CARD_Z.meetFlyer + 40 + i,
+            () => {
+              this.animating.delete(card.id);
+              const free = isFree(state, card.id);
+              if (free) {
+                this.animating.add(card.id);
+                this.flipToFace(
+                  [card.id],
+                  state,
+                  () => {
+                    this.animating.delete(card.id);
+                    seatPuzzleCard(card, restZ, true);
+                    markPuzzleDone(card.id);
+                  },
+                  ticker,
+                  true,
+                  {
+                    hingeXRatio: 0.5,
+                    breathPeak: PHYS.flipBreath,
+                    dimWasteUnder: false,
+                  },
+                );
+              } else {
+                seatPuzzleCard(card, restZ, false);
+                markPuzzleDone(card.id);
+              }
+            },
+          );
+        });
+      }
+    };
+
+    runPuzzleDeal();
   }
 
   /**
@@ -2331,6 +2772,7 @@ export class CardRenderer {
    */
   isBusy(): boolean {
     return (
+      this.dealAnimating ||
       this.animating.size > 0 ||
       this.dragPos.size > 0 ||
       this.drawMoving ||

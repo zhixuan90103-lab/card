@@ -44,6 +44,19 @@ export type CreatePixiOpts = {
   onContextLost?: () => void;
 };
 
+type DisplayMetrics = {
+  rendererW: number;
+  rendererH: number;
+  cssW: number;
+  cssH: number;
+  cssLeft: number;
+  cssTop: number;
+  scale: number;
+  originX: number;
+  originY: number;
+  nativeViewport: boolean;
+};
+
 /**
  * Mount Pixi for the whole game — **WebGPU-first** (D29).
  *
@@ -62,13 +75,6 @@ export async function createPixiApp(
   const resolved = resolveRendererPreference();
   const app = new Application();
 
-  const layoutScale = (): number => {
-    const r = frame.getBoundingClientRect();
-    const w = r.width > 2 ? r.width : DESIGN_WIDTH;
-    const h = r.height > 2 ? r.height : DESIGN_HEIGHT;
-    return Math.max(Math.min(w / DESIGN_WIDTH, h / DESIGN_HEIGHT), 1e-6);
-  };
-
   const native = isNativeApp();
   /**
    * Perf (design/22):
@@ -80,18 +86,66 @@ export async function createPixiApp(
   const useAa = !native;
   const power = 'high-performance' as const;
 
+  const readDisplayMetrics = (): DisplayMetrics => {
+    applyShellLayout();
+    const r = frame.getBoundingClientRect();
+    const last = getLastShellMetrics();
+    const frameW =
+      r.width > 2 ? r.width : last.frameW > 2 ? last.frameW : DESIGN_WIDTH;
+    const frameH =
+      r.height > 2 ? r.height : last.frameH > 2 ? last.frameH : DESIGN_HEIGHT;
+    const scale = Math.max(
+      Math.min(frameW / DESIGN_WIDTH, frameH / DESIGN_HEIGHT),
+      1e-6,
+    );
+
+    if (native) {
+      const shellW = last.shellW > 2 ? last.shellW : frameW;
+      const shellH = last.shellH > 2 ? last.shellH : frameH;
+      const rendererW = Math.max(DESIGN_WIDTH, shellW / scale);
+      const rendererH = Math.max(DESIGN_HEIGHT, shellH / scale);
+      return {
+        rendererW,
+        rendererH,
+        cssW: shellW,
+        cssH: shellH,
+        cssLeft: 0,
+        cssTop: 0,
+        scale,
+        originX: (rendererW - DESIGN_WIDTH) / 2,
+        originY: (rendererH - DESIGN_HEIGHT) / 2,
+        nativeViewport: true,
+      };
+    }
+
+    return {
+      rendererW: BUFFER_WIDTH,
+      rendererH: BUFFER_HEIGHT,
+      cssW: BUFFER_WIDTH * scale,
+      cssH: BUFFER_HEIGHT * scale,
+      cssLeft: (frameW - BUFFER_WIDTH * scale) / 2,
+      cssTop: (frameH - BUFFER_HEIGHT * scale) / 2,
+      scale,
+      originX: FX_PAD_X,
+      originY: FX_PAD_Y,
+      nativeViewport: false,
+    };
+  };
+
   const frameResolution = (): number => {
-    const s = layoutScale();
+    const s = readDisplayMetrics().scale;
     return Math.min(
       Math.max(s * (window.devicePixelRatio || 1), getDpr()),
       maxRes,
     );
   };
+  const initialDisplay = readDisplayMetrics();
 
   await app.init({
-    width: BUFFER_WIDTH,
-    height: BUFFER_HEIGHT,
-    backgroundAlpha: 0,
+    width: initialDisplay.rendererW,
+    height: initialDisplay.rendererH,
+    background: Theme.bg,
+    backgroundAlpha: 1,
     antialias: useAa,
     resolution: frameResolution(),
     autoDensity: true,
@@ -145,18 +199,27 @@ export async function createPixiApp(
   canvas.style.position = 'absolute';
   canvas.style.touchAction = 'none';
   canvas.style.imageRendering = 'auto';
+  canvas.style.backgroundColor = Theme.bgCss;
+  canvas.style.transform = 'translateZ(0)';
+  canvas.style.backfaceVisibility = 'hidden';
+  canvas.style.willChange = 'transform';
+  canvas.style.zIndex = '0';
   canvas.dataset.gpuBackend = backend;
 
   const stageBg = new Graphics();
   stageBg.label = 'design-bg';
-  stageBg.rect(FX_PAD_X, FX_PAD_Y, DESIGN_WIDTH, DESIGN_HEIGHT);
-  stageBg.fill({ color: Theme.bg });
   app.stage.addChild(stageBg);
 
   const world = new Container();
   world.label = 'world';
-  world.position.set(FX_PAD_X, FX_PAD_Y);
   app.stage.addChild(world);
+
+  const placeWorld = (m: DisplayMetrics) => {
+    stageBg.clear();
+    stageBg.rect(m.originX, m.originY, DESIGN_WIDTH, DESIGN_HEIGHT);
+    stageBg.fill({ color: Theme.bg });
+    world.position.set(m.originX, m.originY);
+  };
 
   let dead = false;
   let destroying = false;
@@ -182,26 +245,12 @@ export async function createPixiApp(
    */
   const resize = () => {
     if (dead) return;
-    applyShellLayout();
-    const r = frame.getBoundingClientRect();
-    const last = getLastShellMetrics();
-    const frameW =
-      r.width > 2 ? r.width : last.frameW > 2 ? last.frameW : DESIGN_WIDTH;
-    const frameH =
-      r.height > 2 ? r.height : last.frameH > 2 ? last.frameH : DESIGN_HEIGHT;
-
-    const scale = Math.max(
-      Math.min(frameW / DESIGN_WIDTH, frameH / DESIGN_HEIGHT),
-      1e-6,
-    );
+    const m = readDisplayMetrics();
     const nextRes = Math.min(
-      Math.max(scale * (window.devicePixelRatio || 1), getDpr()),
+      Math.max(m.scale * (window.devicePixelRatio || 1), getDpr()),
       maxRes,
     );
-
-    const cssW = BUFFER_WIDTH * scale;
-    const cssH = BUFFER_HEIGHT * scale;
-    const cssKey = `${frameW | 0}x${frameH | 0}:${cssW | 0}x${cssH | 0}:r${nextRes.toFixed(2)}`;
+    const cssKey = `${m.nativeViewport ? 'native' : 'buffer'}:${m.rendererW | 0}x${m.rendererH | 0}:${m.cssW | 0}x${m.cssH | 0}:${m.cssLeft | 0},${m.cssTop | 0}:r${nextRes.toFixed(2)}`;
     if (cssKey === lastCssKey) return;
     lastCssKey = cssKey;
 
@@ -209,21 +258,26 @@ export async function createPixiApp(
       if (Math.abs(app.renderer.resolution - nextRes) > 0.01) {
         app.renderer.resolution = nextRes;
       }
-      app.renderer.resize(BUFFER_WIDTH, BUFFER_HEIGHT);
+      app.renderer.resize(m.rendererW, m.rendererH);
     } catch (e) {
       console.warn('[gpu] resize failed', e);
     }
 
-    canvas.style.width = `${cssW}px`;
-    canvas.style.height = `${cssH}px`;
-    canvas.style.left = `${(frameW - cssW) / 2}px`;
-    canvas.style.top = `${(frameH - cssH) / 2}px`;
+    canvas.style.position = m.nativeViewport ? 'fixed' : 'absolute';
+    canvas.style.width = `${m.cssW}px`;
+    canvas.style.height = `${m.cssH}px`;
+    canvas.style.left = `${m.cssLeft}px`;
+    canvas.style.top = `${m.cssTop}px`;
     canvas.style.visibility = 'visible';
     canvas.style.opacity = '1';
+    canvas.style.contain = 'strict';
 
     host.style.width = '100%';
     host.style.height = '100%';
-    host.style.overflow = 'visible';
+    host.style.backgroundColor = Theme.bgCss;
+    host.style.transform = 'translateZ(0)';
+    host.style.overflow = m.nativeViewport ? 'hidden' : 'visible';
+    placeWorld(m);
   };
 
   resize();

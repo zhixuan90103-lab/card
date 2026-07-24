@@ -21,9 +21,14 @@ const DEFAULT_COVER = 0.15;
 export type CreateStateOptions = {
   /** Seed used when recycling waste → stock */
   shuffleSeed?: number;
+  /**
+   * If true (default), open with one stock card already on waste.
+   * Open-deal animation sets false — waste stays empty until deal ends.
+   */
+  autoOpenWaste?: boolean;
 };
 
-function cloneState(state: GameState): GameState {
+export function cloneState(state: GameState): GameState {
   const cards: Record<CardId, Card> = {};
   for (const [id, c] of Object.entries(state.cards)) {
     cards[id] = {
@@ -42,6 +47,12 @@ function cloneState(state: GameState): GameState {
     rev: state.rev,
   };
 }
+
+export type GameSessionSnapshot = {
+  state: GameState;
+  history?: GameState[];
+  shuffleSeed: number;
+};
 
 export function createStateFromLevel(
   level: Level,
@@ -124,12 +135,34 @@ export class GameSession {
     this.shuffleSeed = opts.shuffleSeed ?? 42;
     this.rand = mulberry32(this.shuffleSeed);
     this.state = createStateFromLevel(level, opts);
-    // 开局默认帮玩家翻开一张到抽出叠
-    this.ensureWasteHasCard(this.state);
+    // 默认开局帮玩家翻一张到抽叠；开场发牌动画会关这个，发完再抽
+    if (opts.autoOpenWaste !== false) {
+      this.ensureWasteHasCard(this.state);
+    }
+  }
+
+  static fromSnapshot(
+    level: Level,
+    snapshot: GameSessionSnapshot,
+  ): GameSession {
+    const session = new GameSession(level, {
+      shuffleSeed: snapshot.shuffleSeed,
+    });
+    session.state = cloneState(snapshot.state);
+    session.history = (snapshot.history ?? []).map(cloneState);
+    return session;
   }
 
   getState(): GameState {
     return this.state;
+  }
+
+  snapshot(): GameSessionSnapshot {
+    return {
+      state: cloneState(this.state),
+      history: this.history.map(cloneState),
+      shuffleSeed: this.shuffleSeed,
+    };
   }
 
   /** Snapshot for undo */

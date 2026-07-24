@@ -142,6 +142,80 @@ export const PHYS = {
   recCapMs: 300,
   /** Pause after recycle settle before drawing first card to waste (ms) */
   recPauseBeforeDrawMs: 50,
+  /**
+   * Level-enter deal:
+   * center deck (between stock/waste, slightly larger) → puzzle cascade
+   * → remaining to stock → first card draw-flip to waste (main).
+   */
+  /**
+   * Open deal: cards spawn below screen and fly to puzzle/stock seats.
+   * (Center-deck intro / tidy removed.)
+   */
+  /** Off-screen start scale */
+  dealIntroFromScale: 1.42,
+  /** Scale when card reaches seat (before settle shrink-to-1) */
+  dealApproachScale: 1.16,
+  /** Peak flight rotation (deg) */
+  dealIntroTiltMaxDeg: 42,
+  /** Land residual tilt range (deg) — independent of peak for variety */
+  dealLandTiltMinDeg: 8,
+  dealLandTiltMaxDeg: 32,
+  /** Settle after arrive: overshoot + soft shrink + angle correct (ms) */
+  dealSettleMs: 200,
+  /** Overshoot past seat along flight dir (design px) */
+  dealOvershootPx: 12,
+  /** Overshoot scale punch above approach (keep small so shrink stays smooth) */
+  dealOvershootScaleBoost: 0.03,
+  /** Spawn Y = DESIGN_HEIGHT + this */
+  dealIntroSpawnBelow: 56,
+  /**
+   * Deal spawn is a single bottom-center point (not per-column line).
+   * Tiny jitter only so cards don't pixel-stack perfectly.
+   */
+  dealIntroSpawnJitterX: 6,
+  /** @deprecated unused */
+  dealIntroCount: 0,
+  dealIntroMoveMs: 280,
+  dealIntroStaggerMs: 55,
+  dealIntroLandTiltMaxDeg: 28,
+  dealIntroLandScatterPx: 18,
+  dealIntroSquash: 0.16,
+  dealIntroTidyMs: 180,
+  dealIntroTidyStaggerMs: 8,
+  dealIntroPauseMs: 220,
+  dealAnticMs: 0,
+  dealDeckScale: 1.14,
+  /** Vertical peek per card in center deck (design px, deeper = up) */
+  dealDeckPeekY: 2.2,
+  /** Horizontal micro-offset for thickness (design px) */
+  dealDeckPeekX: 0.8,
+  /** Always-on source card at deal origin after intro (1 back) */
+  dealSourceStackCount: 1,
+  /** Max real cards shown on top of source pile */
+  dealDeckMaxVis: 6,
+  /** Single card fly bottom → seat (ms), ease-out */
+  dealMoveMs: 220,
+  /**
+   * Mid-flight stretch (local Y): peak extra scale.y = this amount.
+   * scale.x squashes slightly for volume; 0 = off.
+   */
+  dealFlightStretch: 0.18,
+  /**
+   * Puzzle deal launch gaps: slow at first → faster (节奏感).
+   * delay[i] = sum of gaps 0..i-1 with gap eased start→end.
+   */
+  dealStaggerStartMs: 52,
+  dealStaggerEndMs: 14,
+  /** @deprecated use start/end progressive gaps */
+  dealStaggerMs: 72,
+  dealStaggerFastMs: 48,
+  dealStaggerFastAt: 18,
+  /** Remaining deck → stock: keep snappy (same as pre-slowdown) */
+  dealToStockMs: 120,
+  /** Gap between stock-return launches (ms) */
+  dealToStockStaggerMs: 32,
+  /** Pause after stock settled before first waste flip (ms) */
+  dealPauseBeforeFirstDrawMs: 160,
   /** Random Z tilt peak during recycle fly (deg); settles 0 at frame */
   recTiltMaxDeg: 14,
   dragThreshold: 8,

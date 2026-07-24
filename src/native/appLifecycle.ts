@@ -19,6 +19,81 @@ export type LifecycleHandle = {
   dispose: () => void;
 };
 
+function viewportReady(): boolean {
+  try {
+    const vv = window.visualViewport;
+    const w =
+      vv?.width || window.innerWidth || document.documentElement.clientWidth || 0;
+    const h =
+      vv?.height ||
+      window.innerHeight ||
+      document.documentElement.clientHeight ||
+      0;
+    return w > 2 && h > 2;
+  } catch {
+    return true;
+  }
+}
+
+function nextAnimationFrame(timeoutMs = 140): Promise<boolean> {
+  return new Promise((resolve) => {
+    let done = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      resolve(ok);
+    };
+    timer = setTimeout(() => finish(false), timeoutMs);
+    try {
+      requestAnimationFrame(() => finish(true));
+    } catch {
+      finish(true);
+    }
+  });
+}
+
+/**
+ * iOS WKWebView can report Capacitor active before its drawable surface is
+ * ready. Allocate WebGPU/Pixi only after real foreground frames are flowing.
+ */
+export async function waitForForegroundReady(maxMs = 1800): Promise<boolean> {
+  try {
+    const native = Capacitor.isNativePlatform();
+    const t0 = performance.now();
+    let stableFrames = 0;
+
+    while (performance.now() - t0 < maxMs) {
+      let nativeActive = true;
+      if (native) {
+        try {
+          nativeActive = (await App.getState()).isActive;
+        } catch {
+          nativeActive = true;
+        }
+      }
+
+      const frameReady = await nextAnimationFrame();
+      const ready =
+        nativeActive &&
+        frameReady &&
+        viewportReady() &&
+        (!document.hidden || native);
+
+      stableFrames = ready ? stableFrames + 1 : 0;
+      if (stableFrames >= 2) return true;
+
+      await new Promise((r) => setTimeout(r, 32));
+    }
+
+    return false;
+  } catch (e) {
+    console.warn('[lifecycle] foreground readiness check failed; continuing', e);
+    return true;
+  }
+}
+
 /**
  * Subscribe once. Dedupes rapid multi-source resume (visibility + appState + pageshow).
  */
@@ -65,6 +140,7 @@ export function watchAppLifecycle(handlers: LifecycleHandlers): LifecycleHandle 
       // Native force: still skip if user already backgrounded again
       if (force && Capacitor.isNativePlatform() && !nativeActive) return;
       if (!force && document.hidden && !nativeActive) return;
+      if (!suspended) return;
       suspended = false;
       try {
         handlers.onResume();

@@ -1,6 +1,6 @@
 # 项目文档索引
 
-**更新：** 2026-07-23  
+**更新：** 2026-07-24  
 **规范：** [`DOC_CONVENTIONS.md`](./DOC_CONVENTIONS.md)  
 **现行一页纸：** [`CURRENT.md`](./CURRENT.md)  
 **有效笔记白名单：** [`NOTES_PACK.md`](./NOTES_PACK.md) ← **读什么认这里**
@@ -28,9 +28,9 @@
 | 文档 | 说明 |
 |------|------|
 | [02_game_rules](./design/02_game_rules.md) | **规则** |
-| [04_decisions_log](./design/04_decisions_log.md) | 决策 **D01–D28** |
+| [04_decisions_log](./design/04_decisions_log.md) | 决策 **D01–D30** |
 | [05_board_layout_consensus](./design/05_board_layout_consensus.md) | 牌阵几何 |
-| [19_ios_renderer_lifecycle](./design/19_ios_renderer_lifecycle.md) | **D28** 渲染生命周期 |
+| [19_ios_renderer_lifecycle](./design/19_ios_renderer_lifecycle.md) | **D28 / D30** iOS 渲染生命周期；状态权威、WebView 可丢弃 |
 
 ### A2 · 常用设计
 
@@ -66,6 +66,8 @@
 | ★ | [session_bugs](./changelog/2026-07-23_session_bugs_and_fixes.md) | 问题总表 B1–B15 |
 | | [18_intent_features_params](../research/handfeel/18_intent_features_params.md) | 参数表（phys 覆盖） |
 | | [20 · 12 有效源](../research/handfeel/20_intent_effective_sources_list.md) | 意图 / 物理源 List |
+| | [21 发牌有效源](../research/handfeel/21_deal_anim_effective_sources_list.md) | 进关 deal · Pyramid/Disney/Balatro |
+| | [22 动画优化建议](../research/handfeel/22_animation_optimization_guide.md) | 可读优化文档 · 发牌/既有族 |
 
 Art/UX：[`research/art-ux/00_INDEX.md`](../research/art-ux/00_INDEX.md)  
 路径锁：[`research/path-lock/00_INDEX.md`](../research/path-lock/00_INDEX.md)
@@ -76,10 +78,11 @@ Art/UX：[`research/art-ux/00_INDEX.md`](../research/art-ux/00_INDEX.md)
 
 > **只追加。** 现行结论以 CURRENT + 钉 + 代码为准。完整白名单见 NOTES_PACK。
 
-### C1 · 优先（2026-07-23）
+### C1 · 优先（2026-07-24 / 2026-07-23）
 
 | 文档 | 说明 |
 |------|------|
+| [ios_scene_bridge_rebuild](./changelog/2026-07-24_ios_scene_bridge_rebuild.md) | **D30** iOS 回前台白屏根治 |
 | [session_bugs_and_fixes](./changelog/2026-07-23_session_bugs_and_fixes.md) | **L3 问题全集** |
 | [renderer_rehydrate](./changelog/2026-07-23_renderer_rehydrate.md) | D28 实现 |
 | [ios_roundup](./changelog/2026-07-23_ios_roundup.md) | iOS 总整理 |

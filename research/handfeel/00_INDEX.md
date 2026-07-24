@@ -1,7 +1,7 @@
 # 手感轨 · 目录
 
-**更新：** 2026-07-23  
-**状态：** 现行（钉）/ 检索关（意图计划）  
+**更新：** 2026-07-24  
+**状态：** 现行（钉）/ 检索关（意图计划）/ 发牌调研有效源  
 **规范：** [`docs/DOC_CONVENTIONS.md`](../../docs/DOC_CONVENTIONS.md)  
 **项目入口：** [`docs/CURRENT.md`](../../docs/CURRENT.md) · [`docs/NOTES_PACK.md`](../../docs/NOTES_PACK.md)  
 **清理：** 2026-07-23 已删 fa_* 源卡、01–11/13 旧草案（见 [`NOTES_AUDIT`](../../docs/NOTES_AUDIT.md)）
@@ -19,6 +19,8 @@
 | [14_physical_impl_pins.md](./14_physical_impl_pins.md) | ✅ v1.5 **L1** | 物理手感钉 |
 | [19_intent_impl_pins.md](./19_intent_impl_pins.md) | ✅ **L1 已落地** | 拖松手 + 点选 |
 | [20_intent_effective_sources_list.md](./20_intent_effective_sources_list.md) | ✅ | 意图有效源 |
+| [21_deal_anim_effective_sources_list.md](./21_deal_anim_effective_sources_list.md) | ✅ v1 | **进关发牌**有效源 |
+| [22_animation_optimization_guide.md](./22_animation_optimization_guide.md) | ✅ v1 | **动画优化建议（可读版）** |
 | [12_effective_sources_list.md](./12_effective_sources_list.md) | ✅ v3 | 物理有效源目录 |
 | [session_bugs](../../docs/changelog/2026-07-23_session_bugs_and_fixes.md) | ✅ **L3** | 问题/调整总表 |
 | [18](./18_intent_features_params.md) · [17](./17_intent_event_table.md) | 辅 | 以 phys / 19 为准 |

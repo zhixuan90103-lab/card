@@ -1,6 +1,6 @@
 # Changelog 目录说明
 
-**更新：** 2026-07-23  
+**更新：** 2026-07-24  
 **权威级：** L4 索引  
 **现行入口：** [`../CURRENT.md`](../CURRENT.md) · [`../NOTES_PACK.md`](../NOTES_PACK.md)  
 **清理：** 已删过程噪声与已吸收分条（见 [`NOTES_AUDIT`](../NOTES_AUDIT.md)）
@@ -13,7 +13,8 @@
 |----------|------|
 | 现行行为 / 参数 | **代码** + handfeel **14/19** |
 | 「最近修了啥」 | [`2026-07-23_session_bugs_and_fixes.md`](./2026-07-23_session_bugs_and_fixes.md) |
-| 后台 rehydrate | design **19** + [`renderer_rehydrate`](./2026-07-23_renderer_rehydrate.md) |
+| iOS 回前台白屏 | design **19** + [`ios_scene_bridge_rebuild`](./2026-07-24_ios_scene_bridge_rebuild.md) |
+| Web 后台 rehydrate | design **19** + [`renderer_rehydrate`](./2026-07-23_renderer_rehydrate.md) |
 | iOS 打包 | [`ios_roundup`](./2026-07-23_ios_roundup.md) · [`iphone_checklist`](./2026-07-23_ios_iphone_checklist.md) |
 
 **纪律：** changelog **只追加、不当真理**。
@@ -26,6 +27,7 @@
 
 | 文件 | 主题 |
 |------|------|
+| `2026-07-24_ios_scene_bridge_rebuild.md` | D30 · iOS 回前台白屏根治 |
 | `2026-07-23_session_bugs_and_fixes.md` | L3 问题总表 |
 | `2026-07-23_renderer_rehydrate.md` | D28 实现 |
 | `2026-07-23_ios_roundup.md` | iOS 总整理 |

@@ -1,6 +1,6 @@
 # 现行系统 · 一页纸
 
-**更新：** 2026-07-23  
+**更新：** 2026-07-24  
 **状态：** 现行  
 **权威级：** L1 导航（细节以 **L0 代码** + 钉 / design 为准）  
 **规范：** [`DOC_CONVENTIONS.md`](./DOC_CONVENTIONS.md) · **白名单：** [`NOTES_PACK.md`](./NOTES_PACK.md)
@@ -17,7 +17,7 @@
 | 必读 | 路径 |
 |------|------|
 | 玩法 | [`design/02_game_rules.md`](./design/02_game_rules.md) |
-| 决策 D01–D28 | [`design/04_decisions_log.md`](./design/04_decisions_log.md) |
+| 决策 D01–D30 | [`design/04_decisions_log.md`](./design/04_decisions_log.md) |
 | 牌阵几何 | [`design/05_board_layout_consensus.md`](./design/05_board_layout_consensus.md) |
 
 ---
@@ -36,21 +36,22 @@ npm run cap:ios               # 打包 = build + sync + 开 Xcode
 | 规则 | `src/core/` |
 | 渲染 / 手感 | `src/render/cards.ts` · `phys.ts` |
 | **GPU（整局）** | `src/render/gpu/` **WebGPU-first**（D29）；回退 WebGL；`?renderer=webgl` 可强制 |
-| **视图生命周期** | `src/render/gameView.ts` · `src/native/appLifecycle.ts`（**D28**；device.lost / context lost） |
+| **视图生命周期** | Web: `src/render/gameView.ts` · `src/native/appLifecycle.ts`（**D28**）；iOS: `SceneDelegate.swift` · `AppViewController.swift`（**D30**） |
 | 贴图 | `src/render/cardAssets.ts`（CPU 缓存 + GPU 重烘焙） |
 | 布局运行时 | `src/data/*Runtime.ts` |
 | 输入 | `src/main.ts`（pointer · dropMatch · **rehydrate 后 rebind**） |
 | 调参（仅桌面） | `src/ui/trayTuner.ts` |
 | WebGPU | **D29** 默认 **WebGPU→WebGL**；[`20` 结案 v0.6](./design/20_webgpu_research_plan.md) · [R3 实测](./design/20_webgpu_r3_findings.md)；`?renderer=webgl` 回滚；**Capacitor 真机跟踪** |
 
-### 2.1 后台恢复（D28）
+### 2.1 后台恢复（D28 / D30）
 
 | 原则 | 内容 |
 |------|------|
-| 权威 | `GameSession` / `GameState` 跨后台存活 |
-| 易失 | Pixi + GPU 贴图 + CardRenderer **可整毁重建** |
-| 回前台 | **必须** `GameView.rehydrate(state)`，禁止 soft render 当恢复 |
-| 信号 | Capacitor `appStateChange` + visibility + pageshow |
+| 权威 | `GameSession` / `GameState` 可快照恢复 |
+| 易失 | Pixi + GPU 贴图 + CardRenderer + iOS WKWebView **可整毁重建** |
+| Web 回前台 | `GameView.rehydrate(state)`，禁止 soft render 当恢复 |
+| iOS 回前台 | `SceneDelegate` 重建 `AppViewController` / Capacitor Bridge / WKWebView，再从 snapshot 恢复 |
+| 信号 | Capacitor `appStateChange` + visibility + pageshow + iOS Scene lifecycle |
 | 全文 | [`design/19_ios_renderer_lifecycle.md`](./design/19_ios_renderer_lifecycle.md) |
 
 ---
@@ -84,6 +85,7 @@ npm run cap:ios               # 打包 = build + sync + 开 Xcode
 
 | 文档 | 何时打开 |
 |------|----------|
+| [ios_scene_bridge_rebuild](./changelog/2026-07-24_ios_scene_bridge_rebuild.md) | iOS 回前台白屏根治 / D30 |
 | [session_bugs](./changelog/2026-07-23_session_bugs_and_fixes.md) | 查「改过什么问题」 |
 | [renderer_rehydrate](./changelog/2026-07-23_renderer_rehydrate.md) | D28 实现细节 |
 | [ios_roundup](./changelog/2026-07-23_ios_roundup.md) | 真机壳 / 打包 |

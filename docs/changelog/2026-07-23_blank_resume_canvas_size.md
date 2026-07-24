@@ -2,6 +2,7 @@
 
 **性质：** 老 D28 问题（非 WebGPU 专属）  
 **症状：** 回前台只见浅色底、无牌面；点按仍有逻辑/震动  
+**状态：** 已被 2026-07-24 D30 取代。本文只保留早期排查记录；iOS native 根治方案见 [`2026-07-24_ios_scene_bridge_rebuild`](./2026-07-24_ios_scene_bridge_rebuild.md) 与 [`design/19`](../design/19_ios_renderer_lifecycle.md)。
 
 ## 原因判断
 

@@ -36,6 +36,7 @@
 | **D27b** | **Near-miss 发局偏好** | 稀缺硬门槛仍 2～4，**优先 3～4**；前半贪心 stall 前 ≥3 对；轻量 polish 选优（见 `changelog/2026-07-22_near_miss_p0.md`） |
 | **D28** | **渲染生命周期：视图可丢弃 · 状态为权威** | 后台回前台 **禁止** soft re-render；**必须** `GameView.rehydrate(state)`（**新 GPU 视图** WebGL 或 WebGPU + 重烘焙贴图 + bootstrap + **rebind 指针**）；信号：`appStateChange` / visibility + **`webglcontextlost` / `device.lost`**；全文 `design/19` |
 | **D29** | **渲染后端：优先 WebGPU，回退 WebGL**（工程 D-WG1b） | 默认 `preference: ['webgpu','webgl']`（**禁止 canvas 玩家路径**）；`?renderer=webgl\|webgpu\|auto` / `localStorage.card_renderer`；**P-iOS=维持部署 15**，WebGPU 为渐进增强；Capacitor 真机以回退稳为准；计划 `20` · 检索 `21` v2 · R3 `20_webgpu_r3_findings` |
+| **D30** | **iOS native 回前台：WebView / Bridge 可丢弃** | iOS scene resume 不信任旧 WKWebView / GPU canvas；`SceneDelegate` 重建 root `AppViewController`，新 Capacitor Bridge / WKWebView 冷启动后从 `GameSessionSnapshot` 恢复；禁止 JS `window.location.reload()` 与 native rebuild 双路径竞态；全文 `design/19`，记录 `changelog/2026-07-24_ios_scene_bridge_rebuild.md` |
 | D12 | 无默认 timer | 体验红线 |
 | D13 | 第一版 **不对玩家做钥匙特殊规则** | 内部可标关卡瓶颈 |
 | D14 | 调研文档沉淀于 `research/sorting-market/` | NotebookLM 已入库 |

@@ -103,6 +103,22 @@ export class GameView {
     }
   }
 
+  /**
+   * Foreground return without a GPU-loss signal.
+   * Keep the existing WebGPU/WebGL device and push several present passes after
+   * WKWebView resumes its drawable surface.
+   */
+  present(): void {
+    if (this.destroyed) return;
+    GameView.forcePresent(this.bundle);
+    for (const gap of [50, 150, 350]) {
+      setTimeout(() => {
+        if (this.destroyed) return;
+        GameView.forcePresent(this.bundle);
+      }, gap);
+    }
+  }
+
   /** Wait until phone-frame has a real layout box (iOS VV often 0 on first resume tick). */
   private static async waitForFrameLayout(maxMs = 600): Promise<void> {
     const t0 = performance.now();
