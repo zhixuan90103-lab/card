@@ -326,14 +326,13 @@ export function dropMatchTarget(
   return null;
 }
 
-/**
- * 胜利 = 谜题区清空（D10 / 02_game_rules）
- *
- * 抽牌区·抽出叠是**辅助工具**：过关时允许仍有剩余。
- * 清桌后由 session 回收未用库牌，避免「桌面空了还要收尾配库」的伪终局。
- */
+/** 胜利 = 谜题区 + 抽牌区 + 抽出叠全部清空。 */
 export function isWon(state: GameState): boolean {
-  return puzzleAlive(state).length === 0;
+  return (
+    puzzleAlive(state).length === 0 &&
+    state.stock.length === 0 &&
+    state.waste.length === 0
+  );
 }
 
 /** 谜题已空：回收未使用的 stock/waste（alive=false，清空队列） */
@@ -354,10 +353,7 @@ export function reclaimUnusedDeck(state: GameState): void {
  */
 export function trimSurplusDeck(state: GameState): void {
   if (state.status === 'won') return;
-  if (puzzleAlive(state).length === 0) {
-    reclaimUnusedDeck(state);
-    return;
-  }
+  if (puzzleAlive(state).length === 0) return;
 
   const boardCount = new Map<string, number>();
   for (const c of puzzleAlive(state)) {
@@ -425,16 +421,14 @@ export function trimSurplusDeck(state: GameState): void {
 
 /** 场上 free 是否存在可消对（同点同色） */
 export function hasImmediatePair(state: GameState): boolean {
-  const keys = new Map<string, number>();
-  for (const id of freeCardIds(state)) {
-    const c = state.cards[id];
-    if (!c) continue;
-    const k = matchKeyOf(c);
-    if (!k) continue;
-    keys.set(k, (keys.get(k) ?? 0) + 1);
-  }
-  for (const n of keys.values()) {
-    if (n >= 2) return true;
+  const ids = freeCardIds(state);
+  for (let i = 0; i < ids.length; i++) {
+    const a = state.cards[ids[i]!];
+    if (!a) continue;
+    for (let j = i + 1; j < ids.length; j++) {
+      const b = state.cards[ids[j]!];
+      if (b && canMatchCards(a, b)) return true;
+    }
   }
   return false;
 }

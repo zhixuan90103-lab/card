@@ -15,8 +15,6 @@ import {
   enforceLockKeyScarcity,
   KEY_SCARCITY_HARD_HI,
   KEY_SCARCITY_HARD_LO,
-  KEY_SCARCITY_HI,
-  KEY_SCARCITY_LO,
   passClearGreedy,
   passEarlyProgress,
   passKeyOnBoard,
@@ -29,11 +27,11 @@ import {
  * 仅放：桌面全局奇数 rank 各 1 张（R1 偶数）+ 可选少量节奏伙伴。
  * 上限只作安全阀，正常局远低于此。
  */
-export const LEVEL01_DEAL_STOCK_TARGET = 12;
+export const LEVEL01_DEAL_STOCK_TARGET = 22;
 export const LEVEL01_MAX_LOCKS = 3;
 
-/** 常规局已抬高难度；每 3 局一轮「极难」 */
-export type DealDifficulty = 'hard' | 'extreme';
+/** 单关无限难度节奏：轻松局穿插，少量极难局 */
+export type DealDifficulty = 'easy' | 'hard' | 'extreme';
 
 export type Level01DealMeta = {
   seed: number;
@@ -47,19 +45,26 @@ export type Level01DealMeta = {
   openingPairRank: Rank;
   /** 开局对所在 L2 组 */
   openingPairGroups: [string, string];
+  jokerIds: string[];
+  jokerReveal: 'both-hidden' | 'one-face-up';
   l0Count: number;
   l1Count: number;
   l2Count: number;
 };
 
-/** 第 3、6、9… 局为极难，其余为抬高后的 hard */
+const dealCache = new Map<string, { level: Level; meta: Level01DealMeta }>();
+
+/** 16 局循环：EEEH EEEH EEEH EEEX */
 export function difficultyForRun(runIndex: number): DealDifficulty {
-  if (runIndex > 0 && runIndex % 3 === 0) return 'extreme';
-  return 'hard';
+  const pos = ((Math.max(1, runIndex) - 1) % 16) + 1;
+  if (pos === 16) return 'extreme';
+  if (pos % 4 === 0) return 'hard';
+  return 'easy';
 }
 
 /** hard：几乎总有锁；extreme：满锁 */
 function pickLockCount(rand: () => number, diff: DealDifficulty): number {
+  if (diff === 'easy') return 0;
   if (diff === 'extreme') return 3;
   const x = rand();
   // 无 0 锁；约 20% 一锁、45% 两锁、35% 三锁
@@ -69,11 +74,13 @@ function pickLockCount(rand: () => number, diff: DealDifficulty): number {
 }
 
 function chainChance(diff: DealDifficulty): number {
+  if (diff === 'easy') return 0.25;
   return diff === 'extreme' ? 0.92 : 0.72;
 }
 
 /** L1 抽牌伙伴对：hard 至多 1 组，extreme 不给（库更瘦） */
 function accessPairCap(diff: DealDifficulty): number {
+  if (diff === 'easy') return 4;
   return diff === 'extreme' ? 0 : 1;
 }
 
@@ -82,6 +89,8 @@ export function dealOnce(
   seed: number,
   difficulty: DealDifficulty = 'hard',
 ): { level: Level; meta: Level01DealMeta } | null {
+  if (difficulty === 'easy') return dealEasyOnce(seed);
+
   const rand = mulberry32(seed);
   // 几何固定（忽略 seed）
   const layout = generateLayout();
@@ -166,7 +175,7 @@ export function dealOnce(
   /**
    * 桌面挖开链（禁止「两组同顶同底」平行叠）：
    * tops: P,P,A,Bb,C,D  — depth0 仅 P 成对
-   * bots: A,Bb,C,D,E,F  — depth1 全互异；与顶交叉配对挖开
+   * bots:  A,Bb,C,D,E,F — depth1 全互异；与顶交叉配对挖开
    * （不再使用 bots 双 E，避免消完顶后两底又是一对平行）
    */
   const Bb = lockCount > 0 ? firstKeyRank : B;
@@ -274,7 +283,16 @@ export function dealOnce(
   }
 
   // 修复：任意两组同顶 ⇒ 强制次顶互异（杜绝「两个 5 下都是 Q」）
-  if (!repairParallelPeels(ranks, groups, openingPairRank, take)) return null;
+  if (
+    !repairParallelPeels(
+      ranks,
+      groups,
+      new Set([openingPairRank]),
+      take,
+    )
+  ) {
+    return null;
+  }
 
   const rankMap = new Map<string, Rank[]>();
   for (const [k, v] of ranks) rankMap.set(k, v as Rank[]);
@@ -340,7 +358,12 @@ export function dealOnce(
   // 库内钥匙靠前：早抽到 → 可被盖住 → 洗回再现；避免钉在最后一张
   stock = orderStockKeysFront(stock, cards, lockIds, openTopRanks, rand);
 
-  const diffLabel = difficulty === 'extreme' ? '极难' : '困难';
+  const diffLabel =
+    difficulty === 'extreme'
+      ? '极难'
+      : difficulty === 'hard'
+        ? '困难'
+        : '轻松';
   const level: Level = {
     id: 'level-01',
     name:
@@ -350,7 +373,7 @@ export function dealOnce(
     teachHint:
       difficulty === 'extreme'
         ? '极难局：满锁+薄库，钥匙很少。同点同花色（♥/♠）才能消'
-        : '同点且同花色才能消（红♥ 或 黑♠）。清桌即胜；每 3 局一极难',
+        : '同点且同花色才能消（红♥ 或 黑♠）。清桌即胜；小丑可救场',
     coverThreshold: 0.12,
     cards,
     stock,
@@ -367,6 +390,8 @@ export function dealOnce(
     lockRanks,
     openingPairRank,
     openingPairGroups: [pairG0, pairG1],
+    jokerIds: [],
+    jokerReveal: 'both-hidden',
     l0Count: layout.l0Count,
     l1Count: layout.l1Count,
     l2Count: layout.l2Count,
@@ -462,7 +487,7 @@ function depthBannedRanks(
 function repairParallelPeels(
   ranks: Map<string, Array<Rank | null>>,
   groups: GeoGroup[],
-  openingPair: Rank,
+  allowedL2Pairs: Set<Rank>,
   take: () => Rank,
 ): boolean {
   // L2 顶除开局对外不得再成对
@@ -474,7 +499,7 @@ function repairParallelPeels(
     l2ByTop.get(top)!.push(g);
   }
   for (const [r, gs] of l2ByTop) {
-    if (r === openingPair) {
+    if (allowedL2Pairs.has(r)) {
       if (gs.length !== 2) return false;
     } else if (gs.length > 1) {
       return false;
@@ -593,6 +618,278 @@ function repairParallelPeels(
 
 type StockItem = { id: string; rank: Rank; suit?: Suit };
 
+function dealEasyOnce(seed: number): { level: Level; meta: Level01DealMeta } | null {
+  const rand = mulberry32(seed);
+  const layout = generateLayout();
+  const groups = layout.groups;
+  const ranks = new Map<string, Rank[]>();
+  const usedByGroup = new Map<string, Set<Rank>>();
+  const forcedColor: Array<[string, string]> = [];
+  const stock: Array<{ id: string; rank: Rank }> = [];
+
+  for (const g of groups) {
+    ranks.set(g.key, Array.from({ length: g.size }, () => ALL_RANKS[0]!));
+    usedByGroup.set(g.key, new Set());
+  }
+
+  const slots: Array<{
+    key: string;
+    index: number;
+    id: string;
+    tier: number;
+    depthFromTop: number;
+  }> = [];
+  for (const g of groups) {
+    for (let i = 0; i < g.size; i++) {
+      slots.push({
+        key: g.key,
+        index: i,
+        id: `${g.key}_${i}`,
+        tier: g.tier,
+        depthFromTop: g.size - 1 - i,
+      });
+    }
+  }
+
+  let rankCursor = Math.floor(rand() * ALL_RANKS.length);
+  const nextRankFor = (aKey: string, bKey: string): Rank => {
+    for (let guard = 0; guard < ALL_RANKS.length * 2; guard++) {
+      const r = ALL_RANKS[rankCursor % ALL_RANKS.length]!;
+      rankCursor += 1;
+      if (usedByGroup.get(aKey)!.has(r)) continue;
+      if (usedByGroup.get(bKey)!.has(r)) continue;
+      return r;
+    }
+    return ALL_RANKS.find(
+      (r) => !usedByGroup.get(aKey)!.has(r) && !usedByGroup.get(bKey)!.has(r),
+    ) ?? ALL_RANKS[0]!;
+  };
+
+  const tiers = [2, 1, 0];
+  const releaseOrderedSlots = [...slots].sort((a, b) => {
+    if (b.tier !== a.tier) return b.tier - a.tier;
+    if (a.depthFromTop !== b.depthFromTop) {
+      return a.depthFromTop - b.depthFromTop;
+    }
+    return a.id.localeCompare(b.id);
+  });
+  // Distribute stock partners across the reveal curve. Counts are even so each
+  // layer still has board pairs, while every phase also has draw recovery.
+  const stockQuota = new Map<string, number>([
+    ['1:0', 4],
+    ['1:1', 4],
+    ['1:2', 4],
+    ['0:0', 4],
+    ['0:1', 4],
+    ['0:2', 2],
+  ]);
+  const stockPartnerIds = new Set<string>();
+  for (const [key, count] of stockQuota) {
+    const [tierText, depthText] = key.split(':');
+    const tier = Number(tierText);
+    const depth = Number(depthText);
+    const candidates = releaseOrderedSlots.filter(
+      (s) => s.tier === tier && s.depthFromTop === depth,
+    );
+    shuffleInPlace(candidates, rand);
+    for (const s of candidates.slice(0, count)) stockPartnerIds.add(s.id);
+  }
+
+  for (const tier of tiers) {
+    const maxDepth = Math.max(
+      ...groups.filter((g) => g.tier === tier).map((g) => g.size - 1),
+    );
+    for (let depth = 0; depth <= maxDepth; depth++) {
+      const layerSlots = slots.filter(
+        (s) => s.tier === tier && s.depthFromTop === depth,
+      );
+      shuffleInPlace(layerSlots, rand);
+      const boardSlots = layerSlots.filter((s) => !stockPartnerIds.has(s.id));
+      const stockSlots = layerSlots.filter((s) => stockPartnerIds.has(s.id));
+
+      for (const a of stockSlots) {
+        const r = nextRankFor(a.key, a.key);
+        ranks.get(a.key)![a.index] = r;
+        usedByGroup.get(a.key)!.add(r);
+        const sid = `s${String(stock.length + 1).padStart(2, '0')}`;
+        stock.push({ id: sid, rank: r });
+        forcedColor.push([a.id, sid]);
+      }
+
+      if (boardSlots.length % 2 !== 0) return null;
+      for (let i = 0; i < boardSlots.length; i += 2) {
+        const a = boardSlots[i]!;
+        const b = boardSlots[i + 1]!;
+        const r = nextRankFor(a.key, b.key);
+        ranks.get(a.key)![a.index] = r;
+        ranks.get(b.key)![b.index] = r;
+        usedByGroup.get(a.key)!.add(r);
+        usedByGroup.get(b.key)!.add(r);
+        forcedColor.push([a.id, b.id]);
+      }
+    }
+  }
+
+  let cards: import('../core/types').LevelCardDef[];
+  try {
+    cards = materializeCards(groups, ranks);
+  } catch {
+    return null;
+  }
+
+  if (stock.length !== LEVEL01_DEAL_STOCK_TARGET) return null;
+
+  const painted = paintSuitsOnLevel(cards, stock, forcedColor, rand);
+  cards = painted.cards;
+  const paintedStock = painted.stock.slice(0, LEVEL01_DEAL_STOCK_TARGET);
+
+  const l2TopIds = layout.freeGroupKeys.map((k) => `${k}_1`);
+  const openingPair = forcedColor.find(
+    ([a, b]) => l2TopIds.includes(a) && l2TopIds.includes(b),
+  );
+  const openingPairGroups = openingPair
+    ? [
+        openingPair[0].replace(/_\d+$/, ''),
+        openingPair[1].replace(/_\d+$/, ''),
+      ] as [string, string]
+    : [layout.freeGroupKeys[0]!, layout.freeGroupKeys[1]!] as [string, string];
+  const openingCard = cards.find((c) => c.id === `${openingPairGroups[0]}_1`);
+  const openingPairRank = openingCard?.rank ?? cards[0]!.rank;
+
+  const meta: Level01DealMeta = {
+    seed,
+    layoutId: layout.id,
+    difficulty: 'easy',
+    lockCount: 0,
+    topology: 'independent',
+    lockIds: [],
+    keyIds: [],
+    lockRanks: [],
+    openingPairRank,
+    openingPairGroups,
+    jokerIds: [],
+    jokerReveal: 'both-hidden',
+    l0Count: layout.l0Count,
+    l1Count: layout.l1Count,
+    l2Count: layout.l2Count,
+  };
+
+  const level: Level = {
+    id: 'level-01',
+    name: '1 · 轻松·无锁',
+    teachHint: '同点且同花色才能消（红♥ 或 黑♠）。清桌即胜；小丑可救场',
+    coverThreshold: 0.12,
+    cards,
+    stock: paintedStock,
+  };
+
+  return {
+    level: { ...level, insightNote: JSON.stringify(meta) },
+    meta,
+  };
+}
+
+function withJokers(dealt: {
+  level: Level;
+  meta: Level01DealMeta;
+}): { level: Level; meta: Level01DealMeta } {
+  if (dealt.meta.jokerIds.length > 0) return dealt;
+  const level: Level = {
+    ...dealt.level,
+    cards: dealt.level.cards.map((c) => ({ ...c })),
+    stock: dealt.level.stock.map((s) => ({ ...s })),
+  };
+  const meta: Level01DealMeta = { ...dealt.meta };
+  const rand = mulberry32((meta.seed ^ 0x5f3759df) >>> 0);
+  const reveal: Level01DealMeta['jokerReveal'] =
+    rand() < 0.5 ? 'both-hidden' : 'one-face-up';
+  const ids = placePuzzleJokers(
+    level.cards,
+    {
+      lockIds: meta.lockIds,
+      keyIds: meta.keyIds,
+      openingFreeIds: meta.openingPairGroups.map((k) => `${k}_1`),
+      reveal,
+    },
+    rand,
+  );
+  if (!ids) {
+    throw new Error(`dealLevel01: seed ${meta.seed} failed to place jokers`);
+  }
+  meta.jokerIds = ids;
+  meta.jokerReveal = reveal;
+  return {
+    level: {
+      ...level,
+      insightNote: JSON.stringify(meta),
+    },
+    meta,
+  };
+}
+
+function rectsOverlap(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+): boolean {
+  return (
+    a.x < b.x + b.w &&
+    a.x + a.w > b.x &&
+    a.y < b.y + b.h &&
+    a.y + a.h > b.y
+  );
+}
+
+function hasCoverRelation(
+  a: { layer: number; tier?: number; x: number; y: number; w: number; h: number },
+  b: { layer: number; tier?: number; x: number; y: number; w: number; h: number },
+): boolean {
+  if (!rectsOverlap(a, b)) return false;
+  const at = a.tier ?? 0;
+  const bt = b.tier ?? 0;
+  return at !== bt || a.layer !== b.layer;
+}
+
+function placePuzzleJokers(
+  cards: import('../core/types').LevelCardDef[],
+  opts: {
+    lockIds: string[];
+    keyIds: string[];
+    openingFreeIds: string[];
+    reveal: Level01DealMeta['jokerReveal'];
+  },
+  rand: () => number,
+): string[] | null {
+  const forbidden = new Set([
+    ...opts.lockIds,
+    ...opts.keyIds,
+    ...opts.openingFreeIds,
+  ]);
+  const candidates = cards.filter((c) => {
+    if (forbidden.has(c.id)) return false;
+    if (c.joker) return false;
+    if (c.id.startsWith('d') && c.id.endsWith('_1')) return false;
+    // First version keeps L2 dig chain and L1 lock/key structure intact.
+    return (c.tier ?? 0) === 0;
+  });
+  shuffleInPlace(candidates, rand);
+
+  for (let i = 0; i < candidates.length; i++) {
+    const a = candidates[i]!;
+    for (let j = i + 1; j < candidates.length; j++) {
+      const b = candidates[j]!;
+      if (hasCoverRelation(a, b)) continue;
+      // Avoid same stack; Combo should come from two separate dig paths.
+      if (a.id.replace(/_\d+$/, '') === b.id.replace(/_\d+$/, '')) continue;
+      a.joker = true;
+      b.joker = true;
+      a.faceUp = opts.reveal === 'one-face-up';
+      b.faceUp = false;
+      return [a.id, b.id];
+    }
+  }
+  return null;
+}
+
 /**
  * 抽牌区排序：
  * - stock[0] = 下一张可抽
@@ -670,6 +967,14 @@ export function dealLevel01(
   maxAttempts = 40,
   difficulty: DealDifficulty = 'hard',
 ): { level: Level; meta: Level01DealMeta } {
+  const cacheKey = `${seed}:${maxAttempts}:${difficulty}`;
+  const cached = dealCache.get(cacheKey);
+  if (cached) return cached;
+  const remember = (dealt: { level: Level; meta: Level01DealMeta }) => {
+    dealCache.set(cacheKey, dealt);
+    return dealt;
+  };
+
   /**
    * H1b + D27 + near-miss P0（轻量）：
    * 1) 先找可清局（快路径，同旧逻辑）
@@ -679,15 +984,15 @@ export function dealLevel01(
    */
   type Cand = { level: Level; meta: Level01DealMeta };
   let densityOk: Cand | null = null;
-  let best: { score: number; dealt: Cand } | null = null;
-  let foundClear = false;
-  let polishLeft = 0;
-  const polishN = 12; // 找到可清后再优选的尝试数（控制耗时）
-
-  const hardExtra = 40;
-  const extremeExtra = 40;
+  const easyExtra = 160;
+  const hardExtra = 0;
+  const extremeExtra = 50;
   const totalAttempts =
-    difficulty === 'hard' ? maxAttempts + hardExtra : maxAttempts + extremeExtra;
+    difficulty === 'easy'
+      ? maxAttempts + easyExtra
+      : difficulty === 'hard'
+        ? Math.min(maxAttempts + hardExtra, 12)
+        : maxAttempts + extremeExtra;
 
   const baseOk = (dealt: Cand): boolean => {
     if (!passNoCrossLockKeyBurial(dealt.level, dealt.meta)) return false;
@@ -705,20 +1010,6 @@ export function dealLevel01(
     return passKeyOnBoard(dealt.level, dealt.meta, minBoard);
   };
 
-  const scoreClearable = (dealt: Cand, s: number): number => {
-    const preferScarce = passKeyScarcity(
-      dealt.level,
-      dealt.meta,
-      KEY_SCARCITY_LO,
-      KEY_SCARCITY_HI,
-    );
-    const early = passEarlyProgress(dealt.level, s);
-    if (preferScarce && early) return 4;
-    if (preferScarce) return 3;
-    if (early) return 2;
-    return 1;
-  };
-
   for (let a = 0; a < totalAttempts; a++) {
     const s = (seed + a * 9973) >>> 0;
     const dealt = dealOnce(s, difficulty);
@@ -726,39 +1017,34 @@ export function dealLevel01(
     if (!baseOk(dealt)) continue;
     densityOk = dealt;
 
+    if (difficulty === 'easy') {
+      if (!passClearGreedy(dealt.level, s)) continue;
+      if (!passEarlyProgress(dealt.level, s, 8)) continue;
+      return remember(withJokers(dealt));
+    }
+
     if (!passClearGreedy(dealt.level, s)) continue;
 
-    const sc = scoreClearable(dealt, s);
-    if (sc >= 4) return dealt; // 理想 near-miss 形
-
-    if (!best || sc > best.score) best = { score: sc, dealt };
-
-    if (!foundClear) {
-      foundClear = true;
-      polishLeft = polishN;
-    } else {
-      polishLeft -= 1;
-      if (polishLeft <= 0 && best) return best.dealt;
-    }
+    return remember(withJokers(dealt));
   }
-
-  if (best) return best.dealt;
 
   // hard：再短搜一轮（换盐），仍只要可清
   if (difficulty === 'hard') {
-    for (let a = 0; a < 60; a++) {
+    for (let a = 0; a < 20; a++) {
       const s = (seed + a * 9973 + 0x9e3779b9) >>> 0;
       const dealt = dealOnce(s, difficulty);
       if (!dealt || !baseOk(dealt)) continue;
-      if (passClearGreedy(dealt.level, s)) return dealt;
+      if (!passClearGreedy(dealt.level, s)) continue;
+      return remember(withJokers(dealt));
     }
-    throw new Error(
-      `dealLevel01: hard seed ${seed} failed to find clearable deal (D27/H1b)`,
-    );
   }
 
-  if (densityOk && passNoCrossLockKeyBurial(densityOk.level, densityOk.meta)) {
-    return densityOk;
+  if (
+    difficulty !== 'easy' &&
+    densityOk &&
+    passNoCrossLockKeyBurial(densityOk.level, densityOk.meta)
+  ) {
+    return remember(withJokers(densityOk));
   }
   throw new Error('dealLevel01: failed to generate');
 }

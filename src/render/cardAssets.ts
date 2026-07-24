@@ -31,6 +31,7 @@ export const CARD_CORNER_RADIUS = 8;
 
 export const CARD_BACK_KEY = 'card-back';
 export const CARD_SHADOW_KEY = 'card-shadow';
+export const CARD_JOKER_KEY = 'card-joker';
 
 function filePrefix(suit: Suit): 'R' | 'B' {
   return suit === 'H' ? 'R' : 'B';
@@ -47,6 +48,7 @@ function faceAssetUrl(suit: Suit, rank: Rank): string {
 }
 
 const BACK_URL = `/cards/Card_B.png?v=${ASSET_VER}`;
+const JOKER_URL = `/cards/Joker.png?v=${ASSET_VER}`;
 
 const textureCache = new Map<string, Texture>();
 const imageCache = new Map<string, HTMLImageElement>();
@@ -186,6 +188,7 @@ function bakeShadowTexture(resolution: number): Texture {
 function assetJobs(): { key: string; url: string }[] {
   const jobs: { key: string; url: string }[] = [
     { key: CARD_BACK_KEY, url: BACK_URL },
+    { key: CARD_JOKER_KEY, url: JOKER_URL },
   ];
   for (const suit of ['H', 'S'] as Suit[]) {
     for (const rank of RANKS) {
@@ -240,6 +243,15 @@ export function getFaceTexture(suit: Suit, rank: Rank): Texture {
   const tex = textureCache.get(key);
   if (!tex) {
     console.warn(`[cardAssets] missing texture ${key}`);
+    return Texture.WHITE;
+  }
+  return tex;
+}
+
+export function getJokerTexture(): Texture {
+  const tex = textureCache.get(CARD_JOKER_KEY);
+  if (!tex) {
+    console.warn(`[cardAssets] missing texture ${CARD_JOKER_KEY}`);
     return Texture.WHITE;
   }
   return tex;

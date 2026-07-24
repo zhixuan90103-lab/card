@@ -18,12 +18,16 @@ describe('level catalog — single infinite', () => {
     expect(nextLevel('level-01')).toBeUndefined();
   });
 
-  it('every 3rd run is extreme', () => {
-    expect(difficultyForRun(1)).toBe('hard');
-    expect(difficultyForRun(2)).toBe('hard');
-    expect(difficultyForRun(3)).toBe('extreme');
-    expect(difficultyForRun(6)).toBe('extreme');
-    expect(difficultyForRun(7)).toBe('hard');
+  it('difficulty follows EEEH EEEH EEEH EEEX cycle', () => {
+    expect(difficultyForRun(1)).toBe('easy');
+    expect(difficultyForRun(2)).toBe('easy');
+    expect(difficultyForRun(3)).toBe('easy');
+    expect(difficultyForRun(4)).toBe('hard');
+    expect(difficultyForRun(5)).toBe('easy');
+    expect(difficultyForRun(8)).toBe('hard');
+    expect(difficultyForRun(12)).toBe('hard');
+    expect(difficultyForRun(16)).toBe('extreme');
+    expect(difficultyForRun(17)).toBe('easy');
   });
 
   it('extreme deals max locks', () => {

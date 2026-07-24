@@ -96,6 +96,19 @@ function freeByMatchKey(state: GameState): Map<string, CardId[]> {
   return by;
 }
 
+function findFreePair(state: GameState): [CardId, CardId] | null {
+  for (const ids of freeByMatchKey(state).values()) {
+    if (ids.length < 2) continue;
+    const wasteId = ids.find((id) => state.cards[id]!.zone === 'waste');
+    if (wasteId) {
+      const other = ids.find((id) => id !== wasteId)!;
+      return [wasteId, other];
+    }
+    return [ids[0]!, ids[1]!];
+  }
+  return null;
+}
+
 export type GreedyProgressProbe = {
   /** 贪心能否清桌 */
   clearable: boolean;
@@ -126,7 +139,7 @@ export function probeGreedyProgress(
   let idleDraws = 0;
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    if (isWon(state) || puzzleAlive(state).length === 0) {
+    if (isWon(state)) {
       if (matchesBeforeFirstStall < 0) {
         matchesBeforeFirstStall = matches;
         puzzleAtFirstStall = 0;
@@ -141,18 +154,7 @@ export function probeGreedyProgress(
     }
 
     const byKey = freeByMatchKey(state);
-
-    let pair: [CardId, CardId] | null = null;
-    for (const ids of byKey.values()) {
-      if (ids.length < 2) continue;
-      const wasteId = ids.find((id) => state.cards[id]!.zone === 'waste');
-      if (wasteId) {
-        const other = ids.find((id) => id !== wasteId)!;
-        pair = [wasteId, other];
-        break;
-      }
-      if (!pair) pair = [ids[0]!, ids[1]!];
-    }
+    const pair = findFreePair(state);
     if (pair) {
       removePair(state, pair[0], pair[1]);
       ensureWaste(state);
@@ -174,16 +176,14 @@ export function probeGreedyProgress(
     if (need.size > 0) {
       if (drawToward(state, need, rand)) {
         const by2 = freeByMatchKey(state);
-        let did = false;
-        for (const ids of by2.values()) {
-          if (ids.length >= 2) {
-            removePair(state, ids[0]!, ids[1]!);
-            ensureWaste(state);
-            matches += 1;
-            did = true;
-            idleDraws = 0;
-            break;
-          }
+        void by2;
+        const nextPair = findFreePair(state);
+        const did = !!nextPair;
+        if (nextPair) {
+          removePair(state, nextPair[0], nextPair[1]);
+          ensureWaste(state);
+          matches += 1;
+          idleDraws = 0;
         }
         if (did) continue;
       }
@@ -233,7 +233,7 @@ export function probeGreedyProgress(
     }
   }
 
-  const won = isWon(state) || puzzleAlive(state).length === 0;
+  const won = isWon(state);
   return {
     clearable: won,
     matchesBeforeFirstStall:

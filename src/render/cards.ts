@@ -14,6 +14,7 @@ import {
   CARD_CORNER_RADIUS,
   getBackTexture,
   getFaceTexture,
+  getJokerTexture,
   getShadowTexture,
 } from './cardAssets';
 import {
@@ -1082,7 +1083,9 @@ export class CardRenderer {
     view.cardId = card.id;
     view.root.label = card.id;
     view.baseY = 0;
-    view.face.texture = getFaceTexture(card.suit, card.rank);
+    view.face.texture = card.joker
+      ? getJokerTexture()
+      : getFaceTexture(card.suit, card.rank);
     view.back.texture = getBackTexture();
     view.shadow.texture = getShadowTexture();
     view.shadow.visible = false;
@@ -1254,7 +1257,9 @@ export class CardRenderer {
     this.clearDimUnlessUnderFlip(view);
     view.back.visible = false;
     view.face.visible = true;
-    view.face.texture = getFaceTexture(card.suit, card.rank);
+    view.face.texture = card.joker
+      ? getJokerTexture()
+      : getFaceTexture(card.suit, card.rank);
     this.layoutSprite(view.face, w, h);
     this.ensureFaceRim(view, w, h);
     view.frame.visible = true;
@@ -1715,6 +1720,17 @@ export class CardRenderer {
       });
     }
     return out;
+  }
+
+  forceFaceUpForMatch(ids: CardId[], state: GameState): void {
+    for (const id of ids) {
+      const view = this.views.get(id);
+      const card = state.cards[id];
+      if (!view || !card) continue;
+      view.root.visible = true;
+      this.showFace(view, card, card.rect.w, card.rect.h, true);
+      view.root.zIndex = CARD_Z.matchStart;
+    }
   }
 
   /**
@@ -2890,7 +2906,7 @@ export class CardRenderer {
 
       if (drag) {
         this.showFace(view, card, card.rect.w, card.rect.h, false);
-      } else if (holdAsBack || !free) {
+      } else if (holdAsBack || (!free && !card.faceUp)) {
         this.showBack(view, card.rect.w, card.rect.h);
       } else {
         this.showFace(view, card, card.rect.w, card.rect.h, selected);

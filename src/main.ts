@@ -148,6 +148,7 @@ async function main(): Promise<void> {
       });
   let drawsWithoutMatch = restored?.drawsWithoutMatch ?? 0;
   let softTipShown = restored?.softTipShown ?? false;
+  let jokerFeverActive = false;
 
   syncPileRects(session);
 
@@ -260,7 +261,7 @@ async function main(): Promise<void> {
 
   const softTipText = (st: ReturnType<typeof session.getState>): string | null => {
     // 硬死局走结算浮层，不再贴软提示
-    if (isHardDead(st)) return null;
+    if (!jokerFeverActive && isHardDead(st)) return null;
     // 仅在仍属软卡时展示（曾触发过阈值）；有立即对则收回
     if (softTipShown && isSoftStuck(st)) {
       return '试试撤销或重开 · 或继续抽牌洗回';
@@ -288,7 +289,7 @@ async function main(): Promise<void> {
 
   const refreshHud = () => {
     const st = session.getState();
-    const hard = isHardDead(st);
+    const hard = !jokerFeverActive && isHardDead(st);
     if (st.status === 'won' && !lastWon) {
       lastWon = true;
       hapticSuccess();
@@ -337,6 +338,7 @@ async function main(): Promise<void> {
        * Play normal draw anim (do not teleport onto waste).
        */
       autoDrewId?: CardId | null;
+      onDone?: () => void;
     },
   ) => {
     hapticHeavy();
@@ -365,7 +367,10 @@ async function main(): Promise<void> {
     let flipDone = toFlip.length === 0;
     let autoDrawDone = !autoDrewId;
     const tryFinishClear = () => {
-      if (exitDone && flipDone && autoDrawDone) refresh();
+      if (exitDone && flipDone && autoDrawDone) {
+        refresh();
+        opts?.onDone?.();
+      }
     };
 
     const afterExit = () => {
@@ -635,6 +640,95 @@ async function main(): Promise<void> {
     refresh();
   };
 
+  const findJokerFeverPair = (
+    st: GameState,
+  ): { pair: [CardId, CardId]; magic: boolean } | null => {
+    const byKey = new Map<string, CardId[]>();
+    const freeOrdinary: CardId[] = [];
+    for (const id of freeCardIds(st)) {
+      const c = st.cards[id];
+      if (!c || !c.alive || c.zone !== 'puzzle' || c.joker) continue;
+      freeOrdinary.push(id);
+      const key = `${c.rank}_${c.suit}`;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key)!.push(id);
+    }
+    for (const ids of byKey.values()) {
+      if (ids.length >= 2) {
+        return { pair: [ids[0]!, ids[1]!], magic: false };
+      }
+    }
+    for (const id of freeOrdinary) {
+      const c = st.cards[id]!;
+      const partner = Object.values(st.cards).find(
+        (other) =>
+          other.id !== id &&
+          other.alive &&
+          !other.joker &&
+          other.zone === 'puzzle' &&
+          other.rank === c.rank &&
+          other.suit === c.suit,
+      );
+      if (partner) return { pair: [id, partner.id], magic: true };
+    }
+    return null;
+  };
+
+  const runJokerFever = () => {
+    jokerFeverActive = true;
+    let chain = 0;
+    const maxPairs = 40;
+
+    const finishFever = () => {
+      jokerFeverActive = false;
+      refresh();
+    };
+
+    const step = () => {
+      if (cards.isBusy()) {
+        setTimeout(step, 60);
+        return;
+      }
+      const st = session.getState();
+      if (st.status === 'won' || chain >= maxPairs) {
+        finishFever();
+        return;
+      }
+      const found = findJokerFeverPair(st);
+      if (!found) {
+        finishFever();
+        return;
+      }
+      const { pair, magic } = found;
+
+      const freeBefore = freeIdSet(st);
+      if (magic) cards.forceFaceUpForMatch(pair, st);
+      const poses = cards.capturePoses(pair);
+      const result = magic
+        ? session.tryFeverMagicPair(pair[0], pair[1])
+        : session.tryMatchPair(pair[0], pair[1]);
+      if (!result.matched) {
+        finishFever();
+        return;
+      }
+      chain += 1;
+      hapticMedium();
+      playMatchClear(pair, freeBefore, {
+        skipMeet: chain > 1,
+        meetMs: Math.max(90, PHYS.meetMs - chain * 8),
+        startPoses: poses,
+        throwForceK: 1 + Math.min(0.45, chain * 0.035),
+        autoDrewId: result.autoDrewId,
+        onDone: () => {
+          setTimeout(step, Math.max(70, 170 - chain * 8));
+        },
+      });
+    };
+
+    hapticSuccess();
+    setTimeout(step, 120);
+  };
+
   const doTapCard = (id: CardId) => {
     const freeBefore = freeIdSet(session.getState());
     const selectedBefore = session.getState().selectedId;
@@ -647,12 +741,14 @@ async function main(): Promise<void> {
     if (result.matched && selectedBefore) {
       drawsWithoutMatch = 0;
       softTipShown = false;
+      if (result.jokerFever) jokerFeverActive = true;
       // Tap: A1 (selected) flies to A2 (second tap), then same exit as drag match
       playMatchClear([selectedBefore, id], freeBefore, {
         startPoses: tapPoses,
         clusterAtId: id,
         throwForceK: 1,
         autoDrewId: result.autoDrewId,
+        onDone: result.jokerFever ? () => runJokerFever() : undefined,
       });
       return;
     }
@@ -813,10 +909,11 @@ async function main(): Promise<void> {
       const freeBefore = freeIdSet(session.getState());
       // Capture BEFORE clearDrag / match — release finger pose is the start
       const startPoses = cards.capturePoses([drag.id, targetId]);
-      const { matched, autoDrewId } = session.tryMatchPair(drag.id, targetId);
+      const { matched, jokerFever, autoDrewId } = session.tryMatchPair(drag.id, targetId);
       if (matched) {
         drawsWithoutMatch = 0;
         softTipShown = false;
+        if (jokerFever) jokerFeverActive = true;
         cards.clearDrag(drag.id);
         // Keep dragged card at release coords (clearDrag only drops drag map)
         cards.applyMatchStartPoses(startPoses);
@@ -850,6 +947,7 @@ async function main(): Promise<void> {
           throwForceK,
           approachDir,
           autoDrewId,
+          onDone: jokerFever ? () => runJokerFever() : undefined,
         });
         return;
       }

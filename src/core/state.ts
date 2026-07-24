@@ -2,8 +2,6 @@ import { mulberry32, shuffleInPlace } from './rng';
 import {
   isFree,
   isWon,
-  puzzleAlive,
-  reclaimUnusedDeck,
   trimSurplusDeck,
 } from './rules';
 import type {
@@ -34,6 +32,8 @@ export function cloneState(state: GameState): GameState {
     cards[id] = {
       ...c,
       rect: { ...c.rect },
+      joker: c.joker,
+      faceUp: c.faceUp,
     };
   }
   return {
@@ -52,6 +52,7 @@ export type GameSessionSnapshot = {
   state: GameState;
   history?: GameState[];
   shuffleSeed: number;
+  echoSeq?: number;
 };
 
 export function createStateFromLevel(
@@ -65,6 +66,8 @@ export function createStateFromLevel(
       id: def.id,
       rank: def.rank,
       suit: def.suit ?? ('S' as Suit),
+      joker: def.joker,
+      faceUp: def.faceUp,
       layer: def.layer,
       tier: def.tier ?? 0,
       rect: { x: def.x, y: def.y, w: def.w, h: def.h },
@@ -79,6 +82,8 @@ export function createStateFromLevel(
       id: s.id,
       rank: s.rank,
       suit: s.suit ?? ('S' as Suit),
+      joker: s.joker,
+      faceUp: s.faceUp,
       layer: 0,
       tier: 0,
       // Stock/waste rects filled by layout helper in render; logical hit uses synced rect
@@ -129,6 +134,7 @@ export class GameSession {
   private initialLevel: Level;
   private shuffleSeed: number;
   private rand: () => number;
+  private echoSeq = 0;
 
   constructor(level: Level, opts: CreateStateOptions = {}) {
     this.initialLevel = level;
@@ -150,6 +156,7 @@ export class GameSession {
     });
     session.state = cloneState(snapshot.state);
     session.history = (snapshot.history ?? []).map(cloneState);
+    session.echoSeq = snapshot.echoSeq ?? 0;
     return session;
   }
 
@@ -162,6 +169,7 @@ export class GameSession {
       state: cloneState(this.state),
       history: this.history.map(cloneState),
       shuffleSeed: this.shuffleSeed,
+      echoSeq: this.echoSeq,
     };
   }
 
@@ -224,6 +232,7 @@ export class GameSession {
     matched: boolean;
     cancelled: boolean;
     reselected: boolean;
+    jokerFever?: boolean;
     /** Match 后若 waste 空则自动从 stock 翻开的牌（需播放抽牌动画） */
     autoDrewId?: CardId | null;
   } {
@@ -259,12 +268,14 @@ export class GameSession {
     }
 
     if (canMatchCards(first, card)) {
+      const jokerFever = !!first.joker && !!card.joker;
       const autoDrewId = this.applyMatch(next, first.id, id);
       this.commit(next);
       return {
         matched: true,
         cancelled: false,
         reselected: false,
+        jokerFever,
         autoDrewId,
       };
     }
@@ -282,7 +293,7 @@ export class GameSession {
   tryMatchPair(
     a: CardId,
     b: CardId,
-  ): { matched: boolean; autoDrewId?: CardId | null } {
+  ): { matched: boolean; jokerFever?: boolean; autoDrewId?: CardId | null } {
     if (this.state.status === 'won' || a === b) {
       return { matched: false };
     }
@@ -302,7 +313,44 @@ export class GameSession {
 
     this.pushHistory();
     const next = cloneState(this.state);
+    const jokerFever = !!ca.joker && !!cb.joker;
     const autoDrewId = this.applyMatch(next, a, b);
+    this.commit(next);
+    return { matched: true, jokerFever, autoDrewId };
+  }
+
+  /**
+   * Joker Fever magic clear: after double-joker, clear any two free puzzle
+   * cards. This is deliberately stronger than normal matching so Fever cannot
+   * fizzle into an obvious two-card dead end.
+   */
+  tryFeverMagicPair(
+    freeId: CardId,
+    partnerId: CardId,
+  ): { matched: boolean; autoDrewId?: CardId | null } {
+    if (this.state.status === 'won' || freeId === partnerId) {
+      return { matched: false };
+    }
+    const ca = this.state.cards[freeId];
+    const cb = this.state.cards[partnerId];
+    if (
+      !ca ||
+      !cb ||
+      !ca.alive ||
+      !cb.alive ||
+      ca.joker ||
+      cb.joker ||
+      ca.zone !== 'puzzle' ||
+      cb.zone !== 'puzzle' ||
+      !isFree(this.state, freeId) ||
+      !canMatchCards(ca, cb)
+    ) {
+      return { matched: false };
+    }
+
+    this.pushHistory();
+    const next = cloneState(this.state);
+    const autoDrewId = this.applyMatch(next, freeId, partnerId);
     this.commit(next);
     return { matched: true, autoDrewId };
   }
@@ -312,14 +360,43 @@ export class GameSession {
    * @returns auto-drew card id (for draw animation), or null
    */
   private applyMatch(state: GameState, a: CardId, b: CardId): CardId | null {
+    this.echoJokerMatchIdentities(state, a, b);
     this.removePair(state, a, b);
     state.selectedId = null;
-    if (puzzleAlive(state).length === 0) {
-      reclaimUnusedDeck(state);
-      return null;
-    }
     trimSurplusDeck(state);
     return this.ensureWasteHasCard(state);
+  }
+
+  /**
+   * Joker matches should open blockers, not silently consume rank/color parity.
+   * When a joker participates, echo the removed cards' ordinary identities back
+   * into stock so later locked partners are still pairable.
+   */
+  private echoJokerMatchIdentities(
+    state: GameState,
+    a: CardId,
+    b: CardId,
+  ): void {
+    const ca = state.cards[a];
+    const cb = state.cards[b];
+    if (!ca || !cb) return;
+    if (!ca.joker && !cb.joker) return;
+
+    for (const c of [ca, cb]) {
+      if (c.joker) continue;
+      const id = `je${state.rev}_${this.echoSeq++}`;
+      state.cards[id] = {
+        id,
+        rank: c.rank,
+        suit: c.suit,
+        layer: 0,
+        tier: 0,
+        rect: { x: 0, y: 0, w: 0, h: 0 },
+        alive: true,
+        zone: 'stock',
+      };
+      state.stock.unshift(id);
+    }
   }
 
   private removePair(state: GameState, a: CardId, b: CardId): void {

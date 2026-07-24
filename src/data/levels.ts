@@ -1,7 +1,7 @@
 /**
  * 内容策略（P1-B · 2026-07-22 定稿）：
  * **单关无限** — 只有 Level01 模板（固定几何），每局新 seed 换点数/锁/stock。
- * 难度：常规 hard 抬高；每 3 局一轮 extreme 极难。
+ * 难度：16 局循环 EEEH EEEH EEEH EEEX。
  */
 import type { Level, Rank } from '../core/types';
 import {
@@ -97,7 +97,7 @@ export function formatRunTitle(
       ? '极难'
       : meta.difficulty === 'hard'
         ? '困难'
-        : '';
+        : '轻松';
   const lock =
     meta.lockCount === 0 ? '无锁' : `锁×${meta.lockCount}`;
   const parts = [`第 ${runIndex} 局`];

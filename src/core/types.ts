@@ -39,6 +39,7 @@ export function matchKey(rank: Rank, suit: Suit): string {
 export function matchKeyOf(card: {
   rank: Rank;
   suit?: Suit;
+  joker?: boolean;
 }): string | null {
   if (!card.suit) return null;
   return matchKey(card.rank, card.suit);
@@ -46,9 +47,10 @@ export function matchKeyOf(card: {
 
 /** 两张可消：同点且同色（红桃配红桃 / 黑桃配黑桃） */
 export function canMatchCards(
-  a: { rank: Rank; suit?: Suit },
-  b: { rank: Rank; suit?: Suit },
+  a: { rank: Rank; suit?: Suit; joker?: boolean },
+  b: { rank: Rank; suit?: Suit; joker?: boolean },
 ): boolean {
+  if (a.joker || b.joker) return true;
   if (a.rank !== b.rank) return false;
   if (!a.suit || !b.suit) return false;
   return a.suit === b.suit;
@@ -78,6 +80,10 @@ export type Card = {
   rank: Rank;
   /** 必填：红黑匹配依赖花色 */
   suit: Suit;
+  /** 小丑牌：可与任意 free 牌配对；双小丑触发 Joker Fever */
+  joker?: boolean;
+  /** 即使被压住也正面展示；隐藏小丑不设置此字段 */
+  faceUp?: boolean;
   /** Fine z within/across stacks (for isCovering + draw order) */
   layer: number;
   /**
@@ -103,6 +109,8 @@ export type LevelCardDef = {
   rank: Rank;
   /** 缺省按黑桃；Level01 deal 会写入真实花色 */
   suit?: Suit;
+  joker?: boolean;
+  faceUp?: boolean;
   layer: number;
   /** Board tier L0=0, L1=1, … (default 0) */
   tier?: number;
@@ -122,7 +130,13 @@ export type Level = {
   insightNote?: string;
   cards: LevelCardDef[];
   /** Stock from top-first: first element is drawn first */
-  stock: Array<{ id: CardId; rank: Rank; suit?: Suit }>;
+  stock: Array<{
+    id: CardId;
+    rank: Rank;
+    suit?: Suit;
+    joker?: boolean;
+    faceUp?: boolean;
+  }>;
   /** Overlap area ratio threshold for covering (0–1 of smaller card) */
   coverThreshold?: number;
 };

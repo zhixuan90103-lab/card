@@ -103,6 +103,98 @@ describe('isFree / pickCard', () => {
     expect(pickCard(state, { x: 170, y: 50 }, { excludeId: 'b2' })).toBeNull();
   });
 
+  it('joker match echoes removed identities back into stock', () => {
+    const level: Level = {
+      id: 'joker-echo',
+      cards: [
+        {
+          id: 'j1',
+          rank: 'A',
+          suit: 'S',
+          joker: true,
+          layer: 0,
+          x: 0,
+          y: 0,
+          w: 100,
+          h: 100,
+        },
+        {
+          id: 'n1',
+          rank: '2',
+          suit: 'H',
+          layer: 0,
+          x: 120,
+          y: 0,
+          w: 100,
+          h: 100,
+        },
+        {
+          id: 'keep',
+          rank: '2',
+          suit: 'H',
+          layer: 0,
+          x: 240,
+          y: 0,
+          w: 100,
+          h: 100,
+        },
+      ],
+      stock: [],
+    };
+    const session = new GameSession(level);
+    const result = session.tryMatchPair('j1', 'n1');
+    expect(result.matched).toBe(true);
+    const st = session.getState();
+    const echoed = [...st.stock, ...st.waste].map((id) => st.cards[id]!);
+    expect(echoed.map((c) => `${c.rank}_${c.suit}`).sort()).toEqual(['2_H']);
+  });
+
+  it('joker fever magic can pair a free card with a covered real partner', () => {
+    const level: Level = {
+      id: 'fever-tail',
+      cards: [
+        {
+          id: 'q',
+          rank: 'Q',
+          suit: 'S',
+          layer: 0,
+          x: 0,
+          y: 0,
+          w: 100,
+          h: 100,
+        },
+        {
+          id: 'q-covered',
+          rank: 'Q',
+          suit: 'S',
+          layer: 0,
+          x: 140,
+          y: 0,
+          w: 100,
+          h: 100,
+        },
+        {
+          id: 'cover',
+          rank: '4',
+          suit: 'H',
+          layer: 1,
+          x: 150,
+          y: 10,
+          w: 100,
+          h: 100,
+        },
+      ],
+      stock: [],
+    };
+    const session = new GameSession(level);
+    expect(isFree(session.getState(), 'q-covered')).toBe(false);
+    const result = session.tryFeverMagicPair('q', 'q-covered');
+    expect(result.matched).toBe(true);
+    expect(session.getState().cards['q']!.alive).toBe(false);
+    expect(session.getState().cards['q-covered']!.alive).toBe(false);
+    expect(session.getState().cards['cover']!.alive).toBe(true);
+  });
+
   it('pickCard prefers nearer center when two free overlap touch', () => {
     // Same layer so neither covers the other (higher layer would lock lower free).
     const level: Level = {
@@ -503,13 +595,13 @@ describe('selection / match / win', () => {
     const s2 = new GameSession(level2);
     s2.tapCard('a');
     s2.tapCard('b');
-    // 清桌后 reclaim 全库
+    // 清桌后仍需清抽牌区
     st = s2.getState();
-    expect(st.status).toBe('won');
-    expect(st.stock.length + st.waste.length).toBe(0);
+    expect(st.status).toBe('playing');
+    expect(st.stock.length + st.waste.length).toBeGreaterThan(0);
   });
 
-  it('win when puzzle clears; leftover stock is reclaimed (tool, not goal)', () => {
+  it('does not win until puzzle, stock, and waste are all clear', () => {
     const level: Level = {
       id: 'win',
       cards: [
@@ -526,16 +618,9 @@ describe('selection / match / win', () => {
     expect(session.getState().waste).toEqual(['s1']);
     session.tapCard('a1');
     session.tapCard('a2');
-    // 清桌即胜：未用库牌回收，不做收尾配对
-    expect(isWon(session.getState())).toBe(true);
-    expect(session.getState().status).toBe('won');
-    expect(session.getState().stock).toEqual([]);
-    expect(session.getState().waste).toEqual([]);
-    expect(session.getState().cards['s1']!.alive).toBe(false);
-    expect(session.getState().cards['s2']!.alive).toBe(false);
-    // stock 始终不可点
-    expect(isFree(session.getState(), 's1')).toBe(false);
-    expect(isFree(session.getState(), 's2')).toBe(false);
+    expect(isWon(session.getState())).toBe(false);
+    expect(session.getState().status).toBe('playing');
+    expect(session.getState().stock.length + session.getState().waste.length).toBe(2);
   });
 });
 
